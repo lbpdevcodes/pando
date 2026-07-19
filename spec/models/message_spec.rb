@@ -1,5 +1,22 @@
 # frozen_string_literal: true
 
+RSpec.describe "Pando::Message encrypted round trip" do
+  let(:conversation) { Pando::Conversation.create!(key: "dm:enc:oding") }
+
+  it "returns decrypted text as UTF-8, not the cipher's binary" do
+    conversation.messages.create!(direction: "incoming", body: "well — that's nice ☺",
+      status: "delivered", sent_at: Time.now.utc, content_id: "enc-1")
+
+    body = Pando::Message.sole.body
+    expect(body).to eq("well — that's nice ☺")
+    expect(body.encoding).to eq(Encoding::UTF_8)
+    expect(body.valid_encoding?).to be(true)
+    # Interpolation into UTF-8 literals is what the transcript does — it must
+    # not raise Encoding::CompatibilityError.
+    expect { "12:00 them: #{body}" }.not_to raise_error
+  end
+end
+
 RSpec.describe "Pando::Message expiry" do
   let(:conversation) { Pando::Conversation.create!(key: "dm:aaaa:bbbb") }
 

@@ -638,6 +638,19 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).to include("Retrying 1 message")
   end
 
+  it "renders the demo seed's non-ascii transcript" do
+    create_profile!
+    ENV["PANDO_DEMO"] = "1"
+
+    backend = run_journey(*unlock_keys, "q")
+
+    frame = plain(backend.frames.last)
+    expect(frame).to include("this whole app is Charming now")
+    expect(frame).not_to include("CompatibilityError")
+  ensure
+    ENV.delete("PANDO_DEMO")
+  end
+
   it "quits through the command palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key
