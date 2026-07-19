@@ -14,8 +14,19 @@ module Pando
     # optional relay token gates every request. Built directly on async-http so it
     # embeds in a spec, a script, or the pando-relay executable identically.
     class App
-      def self.serve(app, host:, port:)
-        Async do
+      # *sweep_interval* runs the queue's expired-message purge on a timer
+      # (nil disables — drain-time filtering still hides expired messages, but
+      # only the sweep reclaims their bytes from the store).
+      def self.serve(app, host:, port:, sweep_interval: 60)
+        Async do |task|
+          if sweep_interval
+            task.async do
+              loop do
+                sleep(sweep_interval)
+                app.sweep!
+              end
+            end
+          end
           endpoint = Async::HTTP::Endpoint.parse("http://#{host}:#{port}")
           Async::HTTP::Server.new(app, endpoint).run
         end
@@ -36,6 +47,10 @@ module Pando
         route(request) || respond(404, error: "not found")
       rescue JSON::ParserError
         respond(400, error: "malformed body")
+      end
+
+      def sweep!(now: Time.now.to_i)
+        queue.sweep(now: now)
       end
 
       private

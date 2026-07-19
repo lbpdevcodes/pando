@@ -1,5 +1,31 @@
 # frozen_string_literal: true
 
+RSpec.describe "Pando::Message expiry" do
+  let(:conversation) { Pando::Conversation.create!(key: "dm:aaaa:bbbb") }
+
+  def seed(body, expires_at:)
+    conversation.messages.create!(direction: "incoming", body: body, status: "delivered",
+      sent_at: Time.now.utc, content_id: "ttl-#{body}", expires_at: expires_at)
+  end
+
+  it "scopes expired messages out of reads" do
+    seed("gone", expires_at: Time.now.utc - 1)
+    seed("staying", expires_at: Time.now.utc + 60)
+    seed("forever", expires_at: nil)
+
+    expect(conversation.messages.unexpired.map(&:body)).to match_array(%w[staying forever])
+  end
+
+  it "sweeps only expired rows and reports the count" do
+    seed("gone", expires_at: Time.now.utc - 1)
+    seed("staying", expires_at: Time.now.utc + 60)
+    seed("forever", expires_at: nil)
+
+    expect(Pando::Message.sweep_expired).to eq(1)
+    expect(conversation.messages.count).to eq(2)
+  end
+end
+
 RSpec.describe Pando::Message do
   def conversation
     @conversation ||= Pando::Conversation.create!(key: "dm:aaa:bbb", title: "Alice")

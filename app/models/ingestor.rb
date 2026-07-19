@@ -69,9 +69,10 @@ module Pando
 
     def store_own_copy(content)
       conversation = find_or_create_conversation(content.conversation, nil)
+      sent_at = parse_time(content.sent_at)
       copy = conversation.messages.create!(
         direction: "outgoing", body: content.body, status: "sent",
-        content_id: content.id, sent_at: parse_time(content.sent_at)
+        content_id: content.id, sent_at: sent_at, expires_at: expiry_for(content, sent_at)
       )
       conversation.touch_activity
       copy && [:message, conversation.key]
@@ -152,13 +153,21 @@ module Pando
     end
 
     def record_message(conversation, content, contact)
+      sent_at = parse_time(content.sent_at)
       conversation.messages.create!(
         direction: "incoming", body: content.body, status: "delivered",
         sender_fingerprint: contact&.fingerprint, content_id: content.id,
-        sent_at: parse_time(content.sent_at)
+        sent_at: sent_at, expires_at: expiry_for(content, sent_at)
       )
     rescue ActiveRecord::RecordNotUnique
       nil
+    end
+
+    # Both ends compute the same absolute expiry from sent_at + ttl; skew is
+    # bounded by clock skew between peers, which self-destruct tolerates.
+    def expiry_for(content, sent_at)
+      ttl = content.ttl.to_i
+      ttl.positive? ? sent_at + ttl : nil
     end
 
     # Every device of the sender flips their copy to delivered.

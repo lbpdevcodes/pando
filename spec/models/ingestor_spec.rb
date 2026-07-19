@@ -107,6 +107,22 @@ RSpec.describe Pando::Ingestor do
     expect(hub.acked).to eq([4])
   end
 
+  it "stamps expiry from the content ttl on incoming text" do
+    sent_at = Time.now.utc.iso8601
+    with_ttl = Pando::Protocol::Content.new(kind: "text", conversation: conversation_key,
+      body: "self destructs", ttl: 120, sent_at: sent_at)
+    without_ttl = Pando::Protocol::Content.new(kind: "text", conversation: conversation_key,
+      body: "keeps", ttl: 0, sent_at: sent_at)
+
+    ingestor.ingest_frame(message_frame(with_ttl, seq: 1))
+    ingestor.ingest_frame(message_frame(without_ttl, seq: 2))
+
+    expiring = Pando::Message.all.find { |m| m.body == "self destructs" }
+    keeping = Pando::Message.all.find { |m| m.body == "keeps" }
+    expect(expiring.expires_at).to be_within(1).of(Time.iso8601(sent_at) + 120)
+    expect(keeping.expires_at).to be_nil
+  end
+
   it "reports typing without persisting anything" do
     typing = Pando::Protocol::Content.new(kind: "typing", conversation: conversation_key, body: {})
 

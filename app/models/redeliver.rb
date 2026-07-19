@@ -24,7 +24,8 @@ module Pando
     # Text only: an attachment message's body is just the filename — its bytes
     # travel as manifest+chunks, which have no offline resend path yet.
     def pending_messages
-      Message.where(direction: "outgoing", status: "pending", kind: "text").order(:sent_at, :id)
+      Message.unexpired.where(direction: "outgoing", status: "pending", kind: "text")
+        .order(:sent_at, :id)
     end
 
     def resend(message)

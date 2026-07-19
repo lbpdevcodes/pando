@@ -15,6 +15,13 @@ module Pando
     validates :sent_at, presence: true
 
     scope :chronological, -> { order(:sent_at, :id) }
+    # Correctness independent of the sweeper: expired rows never render even
+    # if the background purge hasn't caught up.
+    scope :unexpired, -> { where(expires_at: nil).or(where(expires_at: Time.now.utc..)) }
+
+    def self.sweep_expired(now: Time.now.utc)
+      where(expires_at: ..now).delete_all
+    end
 
     def outgoing? = direction == "outgoing"
 

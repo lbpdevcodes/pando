@@ -14,7 +14,7 @@ module Pando
         output.puts "pando-relay listening on #{options[:host]}:#{options[:port]} (db: #{options[:db]})"
         App.serve(
           App.new(db_path: options[:db], token: options[:token]),
-          host: options[:host], port: options[:port]
+          host: options[:host], port: options[:port], sweep_interval: options[:sweep_interval]
         )
       end
 
@@ -29,7 +29,8 @@ module Pando
           host: ENV.fetch("PANDO_RELAY_HOST", "0.0.0.0"),
           port: Integer(ENV.fetch("PANDO_RELAY_PORT", DEFAULT_PORT)),
           db: ENV.fetch("PANDO_RELAY_DB", File.expand_path("~/.pando/relay/relay.db")),
-          token: ENV.fetch("PANDO_RELAY_TOKEN", nil)
+          token: ENV.fetch("PANDO_RELAY_TOKEN", nil),
+          sweep_interval: Integer(ENV.fetch("PANDO_RELAY_SWEEP_INTERVAL", 60))
         }
       end
 
@@ -40,6 +41,9 @@ module Pando
           opts.on("--port PORT", Integer, "Listen port") { |value| options[:port] = value }
           opts.on("--db PATH", "SQLite database path") { |value| options[:db] = value }
           opts.on("--token TOKEN", "Require this relay access token") { |value| options[:token] = value }
+          opts.on("--sweep-interval SECONDS", Integer, "Expired-queue purge interval (default 60)") do |value|
+            options[:sweep_interval] = value
+          end
         end
       end
     end

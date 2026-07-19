@@ -24,6 +24,11 @@ module Pando
     command "Add contact", :open_add_contact
     command "Copy my invite code", :show_my_invite
     command "Retry failed messages", :retry_failed
+    command "Message timer", :cycle_message_ttl
+
+    # Self-destruct presets the timer command cycles through, in seconds.
+    TTL_PRESETS = [0, 5 * 60, 60 * 60, 24 * 60 * 60].freeze
+    TTL_LABELS = {0 => "off", 300 => "5 minutes", 3600 => "1 hour", 86_400 => "24 hours"}.freeze
 
     def show
       return navigate_to("/onboarding") unless Store.unlocked?
@@ -106,6 +111,17 @@ module Pando
       show
     end
 
+    def cycle_message_ttl
+      close_command_palette
+      conversation = active_conversation
+      return show_no_conversation_for_ttl unless conversation
+
+      index = TTL_PRESETS.index(conversation.ttl) || 0
+      conversation.update!(ttl: TTL_PRESETS[(index + 1) % TTL_PRESETS.length])
+      show_toast("Message timer: #{TTL_LABELS.fetch(conversation.ttl)}")
+      show
+    end
+
     def retry_failed
       close_command_palette
       count = Message.where(direction: "outgoing", status: "failed", kind: "text")
@@ -176,9 +192,11 @@ module Pando
     end
 
     def append_outgoing(conversation, text)
+      now = Time.now.utc
       message = conversation.messages.create!(
         direction: "outgoing", body: text, status: "pending",
-        sent_at: Time.now.utc, content_id: SecureRandom.uuid
+        sent_at: now, content_id: SecureRandom.uuid,
+        expires_at: conversation.ttl.positive? ? now + conversation.ttl : nil
       )
       conversation.touch_activity
       transmit(conversation, message, text)
@@ -191,7 +209,7 @@ module Pando
       return if bundles.empty?
 
       content = Protocol::Content.new(kind: "text", conversation: conversation.key,
-        body: text, id: message.content_id, ttl: conversation_ttl)
+        body: text, id: message.content_id, ttl: conversation.ttl)
       deliver_content(content, to_bundles: bundles)
     end
 
@@ -201,7 +219,12 @@ module Pando
     end
 
     def conversation_ttl
-      0
+      active_conversation&.ttl.to_i
+    end
+
+    def show_no_conversation_for_ttl
+      show_toast("Open a conversation first", kind: :warn)
+      show
     end
 
     def conversations
@@ -232,7 +255,7 @@ module Pando
 
     def transcript
       @transcript ||= begin
-        messages = active_conversation ? active_conversation.messages.chronological.to_a : []
+        messages = active_conversation ? active_conversation.messages.unexpired.chronological.to_a : []
         Transcript.new(
           messages: messages,
           width: transcript_width, height: transcript_height,

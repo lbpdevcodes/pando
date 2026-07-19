@@ -11,7 +11,21 @@ module Pando
 
       def header
         title = active ? active.display_title : "No conversations"
-        row(text(title, style: theme.title), *member_count, text("  ·  #{status}", style: status_style))
+        row(text(title, style: theme.title), *member_count, *ttl_badge,
+          text("  ·  #{status}", style: status_style))
+      end
+
+      def ttl_badge
+        return [] unless active&.ttl&.positive?
+
+        [text("  ·  \u{23f1} #{humanize_ttl(active.ttl)}", style: theme.muted)]
+      end
+
+      def humanize_ttl(seconds)
+        return "#{seconds / 3600}h" if seconds >= 3600 && (seconds % 3600).zero?
+        return "#{seconds / 60}m" if seconds >= 60
+
+        "#{seconds}s"
       end
 
       def member_count

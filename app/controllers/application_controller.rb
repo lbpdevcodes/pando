@@ -3,6 +3,7 @@
 module Pando
   class ApplicationController < Charming::Controller
     include Connectivity
+    include Sweeping
 
     layout Layouts::ApplicationLayout
     focus_ring :sidebar, :content

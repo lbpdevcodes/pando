@@ -500,6 +500,25 @@ RSpec.describe "Pando journeys" do
     end
   end
 
+  it "cycles the message timer and hides expired messages" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    conversation = seed_conversation
+    conversation.messages.create!(direction: "incoming", body: "already vanished",
+      status: "delivered", sent_at: Time.now.utc - 120, content_id: "expired-1",
+      expires_at: Time.now.utc - 1)
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"message timer".chars, "enter", "ctrl+c")
+
+    expect(conversation.reload.ttl).to eq(300)
+    frame = plain(backend.frames.last)
+    expect(frame).to include("Message timer: 5 minutes")
+    expect(frame).to include("5m")
+    expect(frame).not_to include("already vanished")
+    expect(frame).to include("second message")
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key
