@@ -51,16 +51,45 @@ module Pando
     end
 
     def build_hub
+      seed_relay_from_env
       Client::Hub.new(identity: session[:identity], relay_url: relay_url,
-        discoverable: Setting.get("discoverable") == "1")
+        token: relay_token, discoverable: Setting.get("discoverable") == "1")
+    end
+
+    # Tears down the current Hub and connects through the (newly) active relay.
+    # The old hub's parting "offline" report may land after the new hub's
+    # "online" — a cosmetic flash the next status report corrects.
+    def reconnect_hub!
+      session[:hub]&.stop!
+      session[:hub] = nil
+      session[:connection_started] = false
+      session[:connection_status] = "connecting"
+      ensure_connected
     end
 
     def hub
       session[:hub]
     end
 
+    # UI-managed relay config wins once one exists; PANDO_RELAY seeds the first
+    # row (see build_hub) and remains the fallback before any unlock.
     def relay_url
-      ENV.fetch("PANDO_RELAY", "http://127.0.0.1:8787")
+      RelayConfig.active_relay&.url || ENV.fetch("PANDO_RELAY", "http://127.0.0.1:8787")
+    end
+
+    def relay_token
+      RelayConfig.active_relay&.token
+    end
+
+    def directory_client
+      Client::DirectoryClient.new(relay_url, token: relay_token)
+    end
+
+    def seed_relay_from_env
+      return if RelayConfig.exists? || ENV["PANDO_RELAY"].to_s.empty?
+
+      url = ENV["PANDO_RELAY"]
+      RelayConfig.create!(name: URI(url).host, url: url, active: true)
     end
 
     # Each Hub report is a JSON-safe payload: a status change or an inbound frame.

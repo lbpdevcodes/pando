@@ -18,13 +18,13 @@ module Pando
       READ_CHUNK = 4096
 
       # Connects, authenticates the device's mailbox, and returns a ready connection.
-      def self.open(url, device:, timeout: 5)
-        new(url, timeout: timeout).tap { |connection| connection.subscribe!(device) }
+      def self.open(url, device:, timeout: 5, headers: {})
+        new(url, timeout: timeout, headers: headers).tap { |connection| connection.subscribe!(device) }
       end
 
       attr_reader :url, :subscribed
 
-      def initialize(url, timeout: 5)
+      def initialize(url, timeout: 5, headers: {})
         @url = url
         @timeout = timeout
         @frames = []
@@ -32,6 +32,9 @@ module Pando
         uri = URI(url)
         @socket = TCPSocket.new(uri.host, uri.port)
         @driver = WebSocket::Driver.client(self)
+        # The relay token-gates the upgrade request itself, so extra headers
+        # must land before the handshake starts.
+        headers.each { |name, value| @driver.set_header(name, value) }
         wire_driver
         @driver.start
         pump until @open

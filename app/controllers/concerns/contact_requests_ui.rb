@@ -109,14 +109,14 @@ module Pando
       show
     end
 
-    # The lookup happens off-thread; only the URL crosses over — no AR access
-    # inside the task block.
+    # The lookup happens off-thread; the client is built up front — no AR
+    # access inside the task block.
     def start_discovery(fingerprint)
       return show_toast("Offline — can't search the directory", kind: :warn) unless hub
 
       session[:discover_fp] = fingerprint
-      url = relay_url
-      run_task(:discover_contact) { Client::DirectoryClient.new(url).discover(fingerprint) }
+      client = directory_client
+      run_task(:discover_contact) { client.discover(fingerprint) }
       show_toast("Searching the directory…", kind: :info)
     end
 

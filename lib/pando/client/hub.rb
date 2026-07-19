@@ -17,11 +17,13 @@ module Pando
 
       attr_reader :account, :device
 
-      def initialize(identity:, relay_url:, directory: nil, backoff: Backoff.new, discoverable: false)
+      def initialize(identity:, relay_url:, directory: nil, backoff: Backoff.new,
+        discoverable: false, token: nil)
         @account = Crypto::Identity.account_from(identity)
         @device = Crypto::Identity.device_from(identity)
         @relay_url = relay_url
-        @directory = directory || DirectoryClient.new(relay_url)
+        @token = token
+        @directory = directory || DirectoryClient.new(relay_url, token: token)
         @backoff = backoff
         @discoverable = discoverable
         @republish = false
@@ -70,7 +72,7 @@ module Pando
       def attempt(progress)
         connection = nil
         directory.publish(bundle.to_h, discoverable: @discoverable)
-        connection = Connection.open(ws_url, device: device)
+        connection = Connection.open(ws_url, device: device, headers: auth_headers)
         backoff.reset
         report(progress, "type" => "status", "value" => "online", "queued" => connection.subscribed.queued)
         pump(connection, progress)
@@ -129,6 +131,10 @@ module Pando
       def ws_url
         uri = URI(relay_url)
         "ws://#{uri.host}:#{uri.port}/v1/ws"
+      end
+
+      def auth_headers
+        @token ? {"x-pando-relay-token" => @token} : {}
       end
     end
   end

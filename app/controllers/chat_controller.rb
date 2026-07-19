@@ -7,6 +7,7 @@ module Pando
     include ContactRequestsUi
     include VerificationUi
     include RoomsUi
+    include RelaysUi
 
     focus_ring :sidebar, :composer
 
@@ -205,7 +206,7 @@ module Pando
 
     # Each modal-owning concern contributes a spec here; the first open one wins.
     def current_modal
-      contact_requests_modal || verification_modal || rooms_modal
+      contact_requests_modal || verification_modal || rooms_modal || relays_modal
     end
 
     def conversation_list
@@ -264,6 +265,7 @@ module Pando
       add_contact_state[:value] = add_contact_input.value if add_contact_open?
       persist_contact_request_state
       persist_rooms_state
+      persist_relays_state
     end
 
     def composer_state

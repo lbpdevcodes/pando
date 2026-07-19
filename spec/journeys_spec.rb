@@ -269,6 +269,48 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).to include("isn't a room")
   end
 
+  it "adds a relay with a token and keeps it across restarts" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    run_journey(*unlock_keys, "ctrl+p", *"add relay".chars, "enter",
+      *"http://relay.example:9999".chars, "enter", *"hunter2".chars, "enter", "ctrl+c")
+
+    relay = Pando::RelayConfig.active_relay
+    expect(relay.url).to eq("http://relay.example:9999")
+    expect(relay.token).to eq("hunter2")
+
+    # A second full app run (fresh Runtime) still lists the saved relay.
+    backend = run_journey(*unlock_keys, "ctrl+p", *"switch relay".chars, "enter", "ctrl+c")
+    expect(plain(backend.frames.last)).to include("relay.example")
+  end
+
+  it "switches the active relay from the picker" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    first = Pando::RelayConfig.create!(name: "one", url: "http://one.example:1", active: true)
+    second = Pando::RelayConfig.create!(name: "two", url: "http://two.example:2")
+    Pando::Store.lock!
+
+    run_journey(*unlock_keys, "ctrl+p", *"switch relay".chars, "enter", "j", "enter", "ctrl+c")
+
+    expect(first.reload.active).to be(false)
+    expect(second.reload.active).to be(true)
+  end
+
+  it "rejects an invalid relay url" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"add relay".chars, "enter",
+      *"not a url".chars, "enter", "ctrl+c")
+
+    expect(Pando::RelayConfig.count).to eq(0)
+    expect(plain(backend.frames.last)).to include("http://host:8787")
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

@@ -97,10 +97,11 @@ module Pando
         respond(409, error: error.message)
       end
 
+      # async-http surfaces header values as arrays; unwrap before comparing.
       def authorized?(request)
         return true unless token
 
-        request.headers["x-pando-relay-token"] == token
+        Array(request.headers["x-pando-relay-token"]).first == token
       end
 
       def respond(status, **payload)
