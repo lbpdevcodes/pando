@@ -35,7 +35,15 @@ module Pando
       end
 
       def composer_block
+        return recording_bar if recording_elapsed
+
         render_component composer
+      end
+
+      def recording_bar
+        minutes, seconds = recording_elapsed.divmod(60)
+        text "\u{25cf} REC #{minutes}:#{seconds.to_s.rjust(2, "0")} — ctrl+r send · esc discard",
+          style: theme.warn
       end
 
       def hints

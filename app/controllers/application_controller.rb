@@ -35,5 +35,13 @@ module Pando
       session.delete(:toast)
       render_default_action
     end
+
+    # Quit must reap audio children: the recorder/player processes outlive the
+    # task threads the runtime hard-kills shortly after shutdown.
+    def quit
+      session[:recorder]&.cancel
+      session[:audio_player]&.stop
+      super
+    end
   end
 end

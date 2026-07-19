@@ -3,6 +3,31 @@
 require "charming/test_helper"
 require "tmpdir"
 
+# A recorder double that "captures" fixture bytes instead of spawning a real
+# process; journeys drive the full UI around it.
+FAKE_JOURNEY_RECORDER = Class.new do
+  attr_reader :path, :cancelled
+
+  def initialize(bytes) = (@bytes = bytes)
+
+  def start(path) = (@path = path) && (@recording = true)
+
+  def stop
+    File.binwrite(@path, @bytes) if @recording
+    @recording = false
+  end
+
+  def cancel
+    @recording = false
+    FileUtils.rm_f(@path.to_s)
+    @cancelled = true
+  end
+
+  def recording? = !!@recording
+
+  def elapsed = 7
+end
+
 # Full end-to-end journeys: a real Runtime driving the whole app through a
 # MemoryBackend, exactly as a user at a keyboard would.
 RSpec.describe "Pando journeys" do
@@ -360,6 +385,50 @@ RSpec.describe "Pando journeys" do
       expect(plain(backend.frames.last)).to include("Saved to")
     ensure
       ENV.delete("PANDO_DOWNLOADS")
+    end
+  end
+
+  def with_fake_recorder(bytes: "RIFFfake-wav-bytesWAVE")
+    recorder = FAKE_JOURNEY_RECORDER.new(bytes)
+    Pando::Audio.recorder_factory = -> { recorder }
+    yield recorder
+  ensure
+    Pando::Audio.recorder_factory = nil
+  end
+
+  it "records a voice note and sends it as a voice attachment" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    with_fake_recorder do |recorder|
+      backend = run_journey(*unlock_keys, "ctrl+r", "ctrl+r", "ctrl+c")
+
+      message = Pando::Message.find_by(kind: "attachment")
+      expect(message).not_to be_nil
+      attachment = message.attachment
+      expect(attachment.voice).to be(true)
+      expect(attachment.duration_s).to eq(7)
+      expect(Pando::Attachments::BlobStore.new.read(attachment.attachment_id))
+        .to eq("RIFFfake-wav-bytesWAVE")
+      expect(File.exist?(recorder.path)).to be(false)
+      expect(backend.frames.map { |f| plain(f) }.join).to include("REC 0:07")
+    end
+  end
+
+  it "discards a cancelled recording without sending anything" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    with_fake_recorder do |recorder|
+      backend = run_journey(*unlock_keys, "ctrl+r", "escape", "ctrl+c")
+
+      expect(recorder.cancelled).to be(true)
+      expect(Pando::Message.where(kind: "attachment")).to be_empty
+      expect(plain(backend.frames.last)).to include("discarded")
     end
   end
 

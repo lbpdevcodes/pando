@@ -9,6 +9,7 @@ module Pando
     include RoomsUi
     include RelaysUi
     include AttachmentsUi
+    include VoiceNotesUi
 
     focus_ring :sidebar, :composer
 
@@ -36,6 +37,7 @@ module Pando
         add_contact: add_contact_open? ? add_contact_input : nil,
         modal: current_modal,
         alert: key_change_alert,
+        recording_elapsed: recording_elapsed,
         palette: command_palette
     end
 
@@ -132,7 +134,11 @@ module Pando
 
     # The sidebar hosts conversations, not routes: j/k move the cursor, enter
     # activates the highlighted conversation and jumps to the composer.
+    # Escape cancels an active recording from here too — the content-scoped
+    # binding only sees escapes once the composer has focus.
     def dispatch_sidebar_key
+      return cancel_recording if key_name == :escape && recording?
+
       case key_name
       when :j, :down then move_cursor(+1)
       when :k, :up then move_cursor(-1)
