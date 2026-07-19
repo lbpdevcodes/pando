@@ -2,7 +2,6 @@
 
 module Pando
   class HomeController < ApplicationController
-
     def show
       render :show, home: home, palette: command_palette
     end

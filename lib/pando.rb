@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "charming"
+require "rbnacl"
 require "zeitwerk"
 require_relative "../config/database"
 
