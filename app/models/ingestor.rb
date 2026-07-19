@@ -36,6 +36,8 @@ module Pando
     end
 
     def dispatch(content, envelope)
+      return dispatch_own_device(content) if own_device?(envelope)
+
       case content.kind
       when "text" then store_text(content, envelope)
       when "receipt" then apply_e2e_receipt(content)
@@ -46,7 +48,40 @@ module Pando
       when "room-history" then apply_room_history(content, envelope)
       when "attachment-manifest" then ingest_manifest(content, envelope)
       when "attachment-chunk" then ingest_chunk(content)
+      when "device-announce" then DeviceAnnounce.apply(content, my_fingerprint: my_fingerprint)
       end
+    end
+
+    # Frames sealed by our own account's OTHER devices are history sync, not
+    # conversation: text lands as an already-sent outgoing copy (never
+    # receipted — receipt storms between own devices), everything else is
+    # dropped. Attachments don't sync across own devices in v1.
+    def dispatch_own_device(content)
+      case content.kind
+      when "text" then store_own_copy(content)
+      when "device-announce" then DeviceAnnounce.apply(content, my_fingerprint: my_fingerprint)
+      end
+    end
+
+    def own_device?(envelope)
+      ContactDevice.fingerprint_for_box_key(envelope.sender_key) == my_fingerprint
+    end
+
+    def store_own_copy(content)
+      conversation = find_or_create_conversation(content.conversation, nil)
+      copy = conversation.messages.create!(
+        direction: "outgoing", body: content.body, status: "sent",
+        content_id: content.id, sent_at: parse_time(content.sent_at)
+      )
+      conversation.touch_activity
+      copy && [:message, conversation.key]
+    rescue ActiveRecord::RecordNotUnique
+      # This device originated the message — the row already exists.
+      nil
+    end
+
+    def my_fingerprint
+      hub.account.fingerprint
     end
 
     def contact_exchange
@@ -126,11 +161,12 @@ module Pando
       nil
     end
 
+    # Every device of the sender flips their copy to delivered.
     def send_delivered_receipt(content, contact)
       receipt = Protocol::Content.new(kind: "receipt", conversation: content.conversation,
         body: {"of" => content.id, "status" => "delivered"})
       Client::Outbox.new(connection: hub, device: hub.device)
-        .deliver(receipt, to_bundles: [contact.device_bundle])
+        .deliver(receipt, to_bundles: ContactDevice.bundles_for(contact.fingerprint))
     end
 
     def apply_e2e_receipt(content)

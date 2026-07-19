@@ -432,6 +432,74 @@ RSpec.describe "Pando journeys" do
     end
   end
 
+  def with_fake_rendezvous
+    slots = Pando::Relay::Rendezvous.new
+    adapter = Class.new do
+      define_method(:deposit) { |code, payload| slots.deposit(code, payload, now: Time.now.to_i) }
+      define_method(:fetch) { |code| slots.fetch(code, now: Time.now.to_i) }
+      define_method(:delete) { |code| slots.delete(code) }
+    end.new
+    Pando::Client::Enrollment.rendezvous_factory = ->(_url, _token) { adapter }
+    yield adapter
+  ensure
+    Pando::Client::Enrollment.rendezvous_factory = nil
+  end
+
+  it "walks a fresh device into the enrollment waiting screen" do
+    with_fake_rendezvous do |rendezvous|
+      backend = run_journey("ctrl+p", *"enroll this device".chars, "enter",
+        *"devicepass".chars, "enter", "ctrl+c")
+
+      frame = plain(backend.frames.last)
+      expect(frame).to include("Enrolling this device")
+      expect(frame).to match(/Code\s+\d{6}/)
+      expect(frame).to match(/Safety code\s+\h{8}/)
+
+      code = frame[/Code\s+(\d{6})/, 1]
+      offer = rendezvous.fetch(code).sole
+      expect(offer["type"]).to eq("enroll-offer")
+    end
+  end
+
+  it "approves an enrolling device from the chat screen" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    my_fingerprint = Pando::Crypto::Identity.account_from(keyring.identity).fingerprint
+    Pando::Store.lock!
+
+    with_fake_rendezvous do |rendezvous|
+      offer = Pando::Client::Enrollment::Offer.new(rendezvous: rendezvous)
+      offer.deposit!
+
+      backend = run_journey(*unlock_keys, "ctrl+p", *"enroll a device".chars, "enter",
+        *offer.code.chars, "enter", "y", "ctrl+c")
+
+      expect(backend.frames.map { |f| plain(f) }.join).to include(offer.safety_code)
+      result = offer.poll
+      expect(result).to be_a(Hash)
+      expect(Pando::Crypto::Identity.account_from(result[:identity]).fingerprint)
+        .to eq(my_fingerprint)
+      expect(Pando::ContactDevice.find_by(mailbox: offer.device.mailbox).fingerprint)
+        .to eq(my_fingerprint)
+    end
+  end
+
+  it "denies an enrolling device with n" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    with_fake_rendezvous do |rendezvous|
+      offer = Pando::Client::Enrollment::Offer.new(rendezvous: rendezvous)
+      offer.deposit!
+
+      run_journey(*unlock_keys, "ctrl+p", *"enroll a device".chars, "enter",
+        *offer.code.chars, "enter", "n", "ctrl+c")
+
+      expect(offer.poll).to eq(:denied)
+    end
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

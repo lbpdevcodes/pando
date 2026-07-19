@@ -33,12 +33,13 @@ module Pando
         .merge("op" => {"kind" => "add", "fp" => invitee.fingerprint})
       content = Protocol::Content.new(kind: "room-update", conversation: room.key,
         body: body, sent_at: now.iso8601)
-      deliver(content, room.contacts.filter_map(&:device_bundle))
+      deliver(content, RecipientBundles.for(room, my_fingerprint: my_fingerprint,
+        my_mailbox: hub.device.mailbox))
     end
 
     def send_history(room, invitee)
       content = RoomBackfill.build(room, my_fingerprint: my_fingerprint)
-      deliver(content, [invitee.device_bundle].compact)
+      deliver(content, ContactDevice.bundles_for(invitee.fingerprint))
     end
 
     def my_entry

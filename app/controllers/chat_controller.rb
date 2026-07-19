@@ -10,6 +10,7 @@ module Pando
     include RelaysUi
     include AttachmentsUi
     include VoiceNotesUi
+    include EnrollmentUi
 
     focus_ring :sidebar, :composer
 
@@ -195,7 +196,8 @@ module Pando
     end
 
     def recipient_bundles(conversation)
-      conversation.contacts.filter_map(&:device_bundle)
+      RecipientBundles.for(conversation, my_fingerprint: my_fingerprint,
+        my_mailbox: hub&.device&.mailbox)
     end
 
     def conversation_ttl
@@ -214,7 +216,7 @@ module Pando
     # Each modal-owning concern contributes a spec here; the first open one wins.
     def current_modal
       contact_requests_modal || verification_modal || rooms_modal || relays_modal ||
-        attachments_modal
+        attachments_modal || enrollment_modal
     end
 
     def conversation_list
@@ -279,6 +281,7 @@ module Pando
       persist_rooms_state
       persist_relays_state
       persist_attachments_state
+      persist_enrollment_state
     end
 
     def composer_state

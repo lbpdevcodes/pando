@@ -17,7 +17,7 @@ module Pando
         .reject { |contact| contact.fingerprint == my_entry["fp"] }
         .map do |contact|
           {"fp" => contact.fingerprint, "name" => contact.name,
-           "bundles" => [contact.device_bundle.to_h]}
+           "bundles" => ContactDevice.bundles_for(contact.fingerprint).map(&:to_h)}
         end
       {"name" => conversation.title, "members" => members + [my_entry]}
     end

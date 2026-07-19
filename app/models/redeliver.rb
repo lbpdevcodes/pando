@@ -28,7 +28,8 @@ module Pando
     end
 
     def resend(message)
-      bundles = message.conversation.contacts.filter_map(&:device_bundle)
+      bundles = RecipientBundles.for(message.conversation,
+        my_fingerprint: hub.account.fingerprint, my_mailbox: hub.device.mailbox)
       return if bundles.empty?
 
       Client::Outbox.new(connection: hub, device: hub.device)

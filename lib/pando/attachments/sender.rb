@@ -52,7 +52,8 @@ module Pando
       def deliver(attachment, bytes, conversation)
         return unless hub
 
-        bundles = conversation.contacts.filter_map(&:device_bundle)
+        bundles = RecipientBundles.for(conversation,
+          my_fingerprint: hub.account.fingerprint, my_mailbox: hub.device.mailbox)
         return if bundles.empty?
 
         outbox = Client::Outbox.new(connection: hub, device: hub.device)

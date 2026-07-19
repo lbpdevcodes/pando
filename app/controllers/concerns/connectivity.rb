@@ -77,8 +77,12 @@ module Pando
       RelayConfig.active_relay&.url || ENV.fetch("PANDO_RELAY", "http://127.0.0.1:8787")
     end
 
+    # Tokens are encrypted at rest; before unlock (onboarding) act as if none
+    # is configured rather than crashing the screen.
     def relay_token
       RelayConfig.active_relay&.token
+    rescue Store::Locked
+      nil
     end
 
     def directory_client
@@ -111,7 +115,24 @@ module Pando
     def apply_status(payload)
       went_online = payload["value"] == "online" && session[:connection_status] != "online"
       session[:connection_status] = payload["value"]
-      Redeliver.new(hub: hub).call if went_online
+      return unless went_online
+
+      Redeliver.new(hub: hub).call
+      announce_new_device if session[:announce_pending]
+    end
+
+    # A freshly enrolled device introduces itself to every contact's devices
+    # and its own siblings on first connect, so their fan-out includes us.
+    def announce_new_device
+      session.delete(:announce_pending)
+      bundles = Contact.pluck(:fingerprint)
+        .flat_map { |fingerprint| ContactDevice.bundles_for(fingerprint) }
+      bundles += ContactDevice.bundles_for(my_fingerprint)
+        .reject { |bundle| bundle.mailbox == hub.device.mailbox }
+      return if bundles.empty?
+
+      deliver_content(DeviceAnnounce.build(hub.bundle, my_fingerprint: my_fingerprint),
+        to_bundles: bundles)
     end
 
     def ingest(frame)

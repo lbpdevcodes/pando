@@ -192,6 +192,115 @@ RSpec.describe Pando::Ingestor do
     end
   end
 
+  describe "multi-device" do
+    let(:my_account) { hub.account }
+    let(:my_other_device) { Pando::Crypto::Device.generate }
+    let(:my_other_bundle) do
+      Pando::Crypto::DeviceBundle.issue(device: my_other_device, account: my_account)
+    end
+
+    it "stores a copy from my own other device as outgoing/sent without receipting" do
+      Pando::ContactDevice.upsert_bundle(my_other_bundle)
+      content = Pando::Protocol::Content.new(kind: "text", conversation: conversation_key,
+        body: "sent from my laptop")
+
+      result = ingestor.ingest_frame(message_frame(content, from: my_other_device))
+
+      message = Pando::Message.sole
+      expect(message.direction).to eq("outgoing")
+      expect(message.status).to eq("sent")
+      expect(hub.sent).to be_empty
+      expect(result).to eq([:message, conversation_key])
+    end
+
+    it "skips the copy of a message this device itself originated" do
+      Pando::ContactDevice.upsert_bundle(my_other_bundle)
+      conversation = Pando::Conversation.create!(key: conversation_key)
+      conversation.messages.create!(direction: "outgoing", body: "original", status: "sent",
+        sent_at: Time.now.utc, content_id: "own-1")
+      content = Pando::Protocol::Content.new(kind: "text", conversation: conversation_key,
+        body: "original", id: "own-1")
+
+      ingestor.ingest_frame(message_frame(content, from: my_other_device))
+
+      expect(Pando::Message.count).to eq(1)
+    end
+
+    it "records an announced device for my own account even from an unknown sender key" do
+      content = Pando::Protocol::Content.new(kind: "device-announce",
+        conversation: "self:#{my_account.fingerprint}",
+        body: {"bundle" => my_other_bundle.to_h})
+
+      result = ingestor.ingest_frame(message_frame(content, from: my_other_device))
+
+      expect(result).to eq([:device, my_account.fingerprint])
+      expect(Pando::ContactDevice.bundles_for(my_account.fingerprint).sole.mailbox)
+        .to eq(my_other_device.mailbox)
+    end
+
+    it "records an announced device for a known contact but never a stranger" do
+      contact_bundle = Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account)
+      Pando::Contact.create!(fingerprint: sender_account.fingerprint, name: "Alice",
+        bundle: JSON.generate(contact_bundle.to_h))
+      second_device = Pando::Crypto::Device.generate
+      second_bundle = Pando::Crypto::DeviceBundle.issue(device: second_device,
+        account: sender_account)
+      announce = Pando::Protocol::Content.new(kind: "device-announce",
+        conversation: "self:#{sender_account.fingerprint}",
+        body: {"bundle" => second_bundle.to_h})
+
+      ingestor.ingest_frame(message_frame(announce, from: second_device))
+      expect(Pando::ContactDevice.bundles_for(sender_account.fingerprint).map(&:mailbox))
+        .to include(second_device.mailbox)
+
+      stranger = Pando::Crypto::Account.generate
+      stranger_device = Pando::Crypto::Device.generate
+      stranger_bundle = Pando::Crypto::DeviceBundle.issue(device: stranger_device,
+        account: stranger)
+      stranger_announce = Pando::Protocol::Content.new(kind: "device-announce",
+        conversation: "self:#{stranger.fingerprint}", body: {"bundle" => stranger_bundle.to_h})
+
+      expect(ingestor.ingest_frame(message_frame(stranger_announce, from: stranger_device)))
+        .to be_nil
+      expect(Pando::ContactDevice.where(fingerprint: stranger.fingerprint)).to be_empty
+    end
+
+    it "attributes a text from a contact's second device without a key-change alarm" do
+      contact_bundle = Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account)
+      contact = Pando::Contact.create!(fingerprint: sender_account.fingerprint, name: "Alice",
+        bundle: JSON.generate(contact_bundle.to_h))
+      second_device = Pando::Crypto::Device.generate
+      Pando::ContactDevice.upsert_bundle(
+        Pando::Crypto::DeviceBundle.issue(device: second_device, account: sender_account)
+      )
+      dm = Pando::Protocol::Content.dm_conversation(hub.account.fingerprint,
+        sender_account.fingerprint)
+      content = Pando::Protocol::Content.new(kind: "text", conversation: dm, body: "from phone")
+
+      result = ingestor.ingest_frame(message_frame(content, from: second_device))
+
+      expect(result).to eq([:message, dm])
+      expect(contact.reload.trust_level).to eq("unverified")
+      expect(Pando::Message.sole.sender_fingerprint).to eq(sender_account.fingerprint)
+    end
+
+    it "receipts a contact's text to every one of their devices" do
+      contact_bundle = Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account)
+      Pando::Contact.create!(fingerprint: sender_account.fingerprint, name: "Alice",
+        bundle: JSON.generate(contact_bundle.to_h))
+      second_device = Pando::Crypto::Device.generate
+      Pando::ContactDevice.upsert_bundle(contact_bundle)
+      Pando::ContactDevice.upsert_bundle(
+        Pando::Crypto::DeviceBundle.issue(device: second_device, account: sender_account)
+      )
+
+      ingestor.ingest_frame(message_frame(text_content("hi")))
+
+      expect(hub.sent.map { |f| f.fetch(:to) })
+        .to match_array([sender.mailbox, second_device.mailbox])
+    end
+  end
+
   describe "attachments" do
     around do |example|
       Dir.mktmpdir do |dir|
