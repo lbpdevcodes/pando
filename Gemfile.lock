@@ -1,7 +1,7 @@
 PATH
   remote: ../charming
   specs:
-    charming (0.2.2)
+    charming (0.2.3)
       activemodel (~> 8.1, >= 8.1.2)
       activesupport (~> 8.1, >= 8.1.2)
       commonmarker (~> 2.0)
@@ -20,7 +20,7 @@ PATH
     pando (0.1.0)
       activerecord (~> 8.1)
       async-websocket (~> 0.30)
-      charming
+      charming (~> 0.2.3)
       chunky_png (~> 1.4)
       rbnacl (~> 7.1)
       rqrcode (~> 3.0)
@@ -291,7 +291,7 @@ CHECKSUMS
   async-websocket (0.30.1) sha256=54bb8a8f184e4aa64434c7a78ecc55850a67a3d1dcd02e3ae787376e2c673936
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   bigdecimal (4.1.2) sha256=53d217666027eab4280346fba98e7d5b66baaae1b9c3c1c0ffe89d48188a3fbd
-  charming (0.2.2)
+  charming (0.2.3)
   chunky_png (1.4.0) sha256=89d5b31b55c0cf4da3cf89a2b4ebc3178d8abe8cbaf116a1dba95668502fdcfe
   commonmarker (2.9.0-aarch64-linux) sha256=e2b4aadb9a2cfa4e206582641ce3a49465549ac1ed4c289fdd63b78d8f24579c
   commonmarker (2.9.0-aarch64-linux-musl) sha256=1cf4d2821f2a7e64945f1ed7c4eeced586fdb27ea7fe7337788802cf8f57cfca
