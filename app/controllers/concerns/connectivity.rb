@@ -87,6 +87,7 @@ module Pando
       case result&.first
       when :contact_request then show_toast("New contact request — ctrl+p → Contact requests", kind: :info)
       when :contact_accepted then show_toast("Contact request accepted", kind: :info)
+      when :key_changed then show_toast("A contact's key has changed — verify before trusting", kind: :error)
       end
     end
   end

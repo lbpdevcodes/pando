@@ -114,6 +114,42 @@ RSpec.describe Pando::Ingestor do
     expect(Pando::Message.count).to eq(0)
   end
 
+  describe "TOFU key-change detection" do
+    let(:peer_account) { Pando::Crypto::Account.generate }
+    let(:peer_device) { Pando::Crypto::Device.generate }
+    let(:peer_bundle) { Pando::Crypto::DeviceBundle.issue(device: peer_device, account: peer_account) }
+    let(:dm_key) do
+      Pando::Protocol::Content.dm_conversation(hub.account.fingerprint, peer_account.fingerprint)
+    end
+
+    let!(:contact) do
+      Pando::Contact.create!(fingerprint: peer_account.fingerprint, name: "Peer",
+        bundle: JSON.generate(peer_bundle.to_h))
+    end
+
+    def dm_text(from:)
+      content = Pando::Protocol::Content.new(kind: "text", conversation: dm_key, body: "hi")
+      message_frame(content, from: from)
+    end
+
+    it "flags the contact when a DM arrives sealed by an unknown device key" do
+      impostor = Pando::Crypto::Device.generate
+
+      result = ingestor.ingest_frame(dm_text(from: impostor))
+
+      expect(result).to eq([:key_changed, dm_key])
+      expect(contact.reload.trust_level).to eq("key_changed")
+      expect(Pando::Message.count).to eq(1)
+    end
+
+    it "leaves trust untouched when the sealing key matches the pinned bundle" do
+      result = ingestor.ingest_frame(dm_text(from: peer_device))
+
+      expect(result).to eq([:message, dm_key])
+      expect(contact.reload.trust_level).to eq("unverified")
+    end
+  end
+
   describe "contact requests" do
     let(:sender_bundle) { Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account) }
 

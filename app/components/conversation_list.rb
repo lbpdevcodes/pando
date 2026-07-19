@@ -40,7 +40,16 @@ module Pando
     def row_for(conversation, index)
       cursor = (focused && index == cursor_index) ? ">" : " "
       active = (conversation.id == active_id) ? "\u{25cf}" : " "
-      text "#{cursor} #{active} #{conversation.display_title}", style: row_style(conversation, index)
+      text "#{cursor} #{active} #{conversation.display_title}#{trust_glyph(conversation)}",
+        style: row_style(conversation, index)
+    end
+
+    def trust_glyph(conversation)
+      case conversation.contacts.first&.trust_level
+      when "verified" then " \u{2713}"
+      when "key_changed" then " !"
+      else ""
+      end
     end
 
     def row_style(conversation, index)

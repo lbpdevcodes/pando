@@ -209,6 +209,39 @@ RSpec.describe "Pando journeys" do
     expect(Pando::ContactRequest.count).to eq(0)
   end
 
+  it "walks a contact through verified, key-changed, and re-verified" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    my_fingerprint = Pando::Crypto::Identity.account_from(keyring.identity).fingerprint
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    invite = Pando::Invite.decode(Pando::Invite.encode(bundle: bundle.to_h, name: "Zoe"))
+    contact, = Pando::AddContact.new(my_fingerprint: my_fingerprint).call(invite)
+    Pando::Store.lock!
+
+    # Verify: fingerprints modal → enter marks verified, sidebar shows the badge.
+    backend = run_journey(*unlock_keys, "ctrl+p", *"verify".chars, "enter", "enter", "q")
+    expect(contact.reload.trust_level).to eq("verified")
+    frames = backend.frames.map { |frame| plain(frame) }
+    expect(frames.join).to include(contact.fingerprint.scan(/.{4}/).join(" "))
+    expect(frames.last).to include("Zoe \u{2713}")
+
+    # A key change raises the banner and downgrades the badge.
+    Pando::Store.data_key = keyring.data_key
+    contact.update!(trust_level: "key_changed")
+    Pando::Store.lock!
+    backend = run_journey(*unlock_keys, "q")
+    frame = plain(backend.frames.last)
+    expect(frame).to include("key has changed")
+    expect(frame).to include("Zoe !")
+
+    # Re-verifying clears the banner.
+    backend = run_journey(*unlock_keys, "ctrl+p", *"verify".chars, "enter", "enter", "q")
+    expect(contact.reload.trust_level).to eq("verified")
+    expect(plain(backend.frames.last)).not_to include("key has changed")
+  end
+
   it "quits through the command palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

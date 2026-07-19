@@ -25,23 +25,11 @@ module Pando
     def upsert_contact(invite)
       contact = Contact.find_or_initialize_by(fingerprint: invite.fingerprint)
       contact.name = invite.name if contact.name.blank?
+      trust = ObserveContactKey.new.call(contact, invite.verified_bundle.account_public_key)
       contact.bundle = JSON.generate(invite.bundle)
-      contact.trust_level = next_trust(contact, invite).level
+      contact.trust_level = trust.level
       contact.save!
       contact
-    end
-
-    def next_trust(contact, invite)
-      new_key = invite.verified_bundle.account_public_key
-      return Crypto::Trust.pin(new_key) if contact.new_record?
-
-      current_trust(contact).observe(new_key)
-    end
-
-    def current_trust(contact)
-      previous = contact.device_bundle&.account_public_key
-      trust = Crypto::Trust.pin(previous || "")
-      (contact.trust_level == "verified") ? trust.verify : trust
     end
 
     def ensure_conversation(invite, contact)

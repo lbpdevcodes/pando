@@ -4,7 +4,7 @@ module Pando
   module Chat
     class ShowView < Charming::View
       def render
-        column(header, transcript_block, composer_block, hints, gap: 1)
+        column(header, *alert_banner, transcript_block, composer_block, hints, gap: 1)
       end
 
       private
@@ -12,6 +12,12 @@ module Pando
       def header
         title = active ? active.display_title : "No conversations"
         row(text(title, style: theme.title), text("  ·  #{status}", style: status_style))
+      end
+
+      def alert_banner
+        return [] unless alert
+
+        [text(alert, style: theme.warn)]
       end
 
       def status_style

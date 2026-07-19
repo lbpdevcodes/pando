@@ -55,7 +55,29 @@ module Pando
 
       conversation.touch_activity
       send_delivered_receipt(content, contact) if contact
+      return [:key_changed, conversation.key] if detect_key_change(conversation, contact)
+
       [:message, conversation.key]
+    end
+
+    # A DM sealed by a device key that doesn't match the peer's pinned bundle is
+    # the TOFU alarm: flag the contact key_changed (we don't hold the new bundle
+    # here, so there's nothing to re-pin) and let the UI raise it loudly.
+    def detect_key_change(conversation, contact)
+      return false if contact
+
+      peer = peer_contact(conversation)
+      return false unless peer && peer.trust_level != "key_changed"
+
+      peer.update!(trust_level: "key_changed")
+      true
+    end
+
+    def peer_contact(conversation)
+      return nil unless conversation.key.start_with?("dm:")
+
+      peer_fp = conversation.key.split(":").drop(1) - [hub.account.fingerprint]
+      Contact.find_by(fingerprint: peer_fp.first)
     end
 
     def find_or_create_conversation(key, contact)

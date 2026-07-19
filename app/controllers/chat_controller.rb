@@ -5,6 +5,7 @@ require "securerandom"
 module Pando
   class ChatController < ApplicationController
     include ContactRequestsUi
+    include VerificationUi
 
     focus_ring :sidebar, :composer
 
@@ -30,6 +31,7 @@ module Pando
         status: connection_status,
         add_contact: add_contact_open? ? add_contact_input : nil,
         modal: current_modal,
+        alert: key_change_alert,
         palette: command_palette
     end
 
@@ -192,7 +194,7 @@ module Pando
 
     # Each modal-owning concern contributes a spec here; the first open one wins.
     def current_modal
-      contact_requests_modal
+      contact_requests_modal || verification_modal
     end
 
     def conversation_list
