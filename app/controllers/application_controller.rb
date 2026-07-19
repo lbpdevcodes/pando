@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+module Pando
+  class ApplicationController < Charming::Controller
+    layout Layouts::ApplicationLayout
+    focus_ring :sidebar, :content
+
+    key "ctrl+p", :open_command_palette, scope: :global
+    key "q", :quit, scope: :global
+
+    command "Home" do
+      navigate_to "/"
+    end
+
+    command "Theme", :open_theme_palette
+    command "Close palette", :close_command_palette
+    command "Quit app", :quit
+  end
+end
