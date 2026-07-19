@@ -26,6 +26,15 @@ RSpec.describe Pando::AddContact do
     expect(conversation.key).to eq(Pando::Protocol::Content.dm_conversation(my_fingerprint, account.fingerprint))
   end
 
+  it "titles a conversation their first message created before we added them" do
+    key = Pando::Protocol::Content.dm_conversation(my_fingerprint, account.fingerprint)
+    Pando::Conversation.create!(key: key, kind: "dm")
+
+    _contact, conversation = add
+
+    expect(conversation.display_title).to eq("Alice")
+  end
+
   it "is idempotent — re-adding refreshes rather than duplicates" do
     add
     add

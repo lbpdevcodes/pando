@@ -105,6 +105,7 @@ module Pando
     def send_message
       conversation = active_conversation
       text = composer.value
+      return no_conversation_to_send_to if conversation.nil? && !text.strip.empty?
       return show if conversation.nil? || text.strip.empty?
 
       append_outgoing(conversation, text)
@@ -205,11 +206,22 @@ module Pando
       transmit(conversation, message, text)
     end
 
+    def no_conversation_to_send_to
+      show_toast("Add a contact first — ctrl+p → Add contact (or Copy my invite code to share yours)",
+        kind: :warn)
+      show
+    end
+
     # Fan the text out to every participant's device bundle. With no recipients
-    # (contact not yet resolved) the message stays local as pending.
+    # (contact not yet resolved) the message stays local as pending — say so
+    # instead of looking like a successful send.
     def transmit(conversation, message, text)
       bundles = recipient_bundles(conversation)
-      return if bundles.empty?
+      if bundles.empty?
+        show_toast("No recipients for this conversation — message saved on this device only",
+          kind: :warn)
+        return
+      end
 
       content = Protocol::Content.new(kind: "text", conversation: conversation.key,
         body: text, id: message.content_id, ttl: conversation.ttl)

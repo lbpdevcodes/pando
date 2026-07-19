@@ -1,0 +1,114 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Prints a client environment's health: code version, env, database schema,
+# row counts, contact bundle integrity, and relay resolution. Run it with the
+# SAME env vars as the client, plus the profile passphrase to check encrypted
+# state:
+#
+#   CHARMING_ENV=alice PANDO_ROOT=~/.pando-alice bundle exec script/doctor <passphrase>
+#
+# Read-only; prints no message contents or secrets.
+require "pando"
+
+def section(title) = puts("\n== #{title}")
+
+section "code"
+puts "git: #{`git rev-parse --short HEAD 2>/dev/null`.strip}"
+puts "dirty files: #{`git status --porcelain 2>/dev/null`.lines.count}"
+
+section "env"
+puts "CHARMING_ENV: #{ENV["CHARMING_ENV"].inspect}"
+puts "PANDO_ROOT:   #{ENV["PANDO_ROOT"].inspect} (resolved: #{Pando::Store.root})"
+puts "PANDO_RELAY:  #{ENV["PANDO_RELAY"].inspect}"
+puts "keyring:      #{Pando::Store.keyring_exists? ? "present" : "MISSING"}"
+
+section "database"
+db = ActiveRecord::Base.connection_db_config.database
+puts "file: #{db} (#{File.exist?(db) ? "#{File.size(db)} bytes" : "MISSING"})"
+begin
+  applied = ActiveRecord::Base.connection.select_values(
+    "SELECT version FROM schema_migrations ORDER BY version"
+  )
+  expected = Dir[File.expand_path("../db/migrate/*.rb", __dir__)]
+    .map { |f| File.basename(f)[/\A\d+/] }.sort
+  puts "migrations applied: #{applied.length}/#{expected.length}"
+  missing = expected - applied
+  puts "MISSING MIGRATIONS: #{missing.join(", ")}" if missing.any?
+rescue => e
+  puts "SCHEMA CHECK FAILED: #{e.class}: #{e.message}"
+end
+
+section "rows"
+{conversations: Pando::Conversation, messages: Pando::Message,
+ contacts: Pando::Contact, contact_devices: Pando::ContactDevice,
+ relay_configs: Pando::RelayConfig}.each do |name, model|
+  count = begin
+    model.count
+  rescue => e
+    "ERROR #{e.class}"
+  end
+  puts "#{name}: #{count}"
+end
+begin
+  Pando::Message.group(:direction, :status).count.sort.each do |(dir, status), n|
+    puts "  #{dir}/#{status}: #{n}"
+  end
+rescue => e
+  puts "  message breakdown failed: #{e.class}"
+end
+
+passphrase = ARGV[0]
+if passphrase.nil?
+  puts "\n(no passphrase given — skipping encrypted-state checks; rerun with the passphrase)"
+  exit
+end
+
+section "encrypted state"
+begin
+  keyring = Pando::Store::Keyring.open(path: Pando::Store.keyring_path, passphrase: passphrase)
+  Pando::Store.data_key = keyring.data_key
+  me = Pando::Crypto::Identity.account_from(keyring.identity)
+  puts "unlock: ok — my fingerprint #{me.fingerprint}"
+rescue Pando::Store::Keyring::WrongPassphrase
+  abort "unlock FAILED: wrong passphrase"
+end
+
+puts "relay resolution: #{Pando::RelayConfig.active_relay&.url ||
+  ENV.fetch("PANDO_RELAY", "http://127.0.0.1:8787")} " \
+  "(token: #{Pando::RelayConfig.active_relay&.token ? "set" : "none"})"
+
+Pando::Contact.find_each do |contact|
+  bundle = begin
+    contact.device_bundle
+  rescue => e
+    e
+  end
+  status =
+    case bundle
+    when nil then "NO BUNDLE"
+    when Exception then "CORRUPT (#{bundle.class})"
+    else bundle.verified? ? "ok (mailbox #{bundle.mailbox[0, 8]}…)" : "SIGNATURE INVALID"
+    end
+  devices = Pando::ContactDevice.where(fingerprint: contact.fingerprint).count
+  puts "contact #{contact.fingerprint} (#{contact.display_name.inspect}): bundle #{status}, #{devices} device rows"
+end
+
+Pando::Conversation.find_each do |conversation|
+  title = begin
+    conversation.display_title
+  rescue => e
+    "TITLE CORRUPT (#{e.class})"
+  end
+  resolvable = conversation.contacts.count
+  puts "conversation #{conversation.key} (#{title.inspect}): kind=#{conversation.kind}, " \
+    "#{conversation.messages.count} messages, #{resolvable} resolvable participants"
+end
+
+bad_bodies = Pando::Message.find_each.count do |message|
+  message.body
+  false
+rescue
+  true
+end
+puts "message bodies that fail to decrypt/render: #{bad_bodies}"

@@ -32,13 +32,17 @@ module Pando
       contact
     end
 
+    # The conversation may predate the contact — their first message creates
+    # it untitled when they added us first — so adding them also heals the
+    # missing title.
     def ensure_conversation(invite, contact)
       key = Protocol::Content.dm_conversation(my_fingerprint, invite.fingerprint)
-      Conversation.find_or_create_by!(key: key) do |conversation|
-        conversation.kind = "dm"
-        conversation.title = contact.display_name
-        conversation.last_activity_at = Time.now.utc
+      conversation = Conversation.find_or_create_by!(key: key) do |c|
+        c.kind = "dm"
+        c.last_activity_at = Time.now.utc
       end
+      conversation.update!(title: contact.display_name) if conversation.title.blank?
+      conversation
     end
   end
 end

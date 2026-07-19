@@ -651,6 +651,31 @@ RSpec.describe "Pando journeys" do
     ENV.delete("PANDO_DEMO")
   end
 
+  it "explains instead of silently dropping a send with no conversation" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "tab", *"hello?".chars, "enter", "ctrl+c")
+
+    expect(Pando::Message.count).to eq(0)
+    expect(plain(backend.frames.last)).to include("Add a contact first")
+  end
+
+  it "warns when a message has no reachable recipients but keeps it locally" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Conversation.create!(key: "self:notes", title: "My invite code",
+      last_activity_at: Time.now.utc)
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "tab", *"note to self".chars, "enter", "ctrl+c")
+
+    message = Pando::Message.where(direction: "outgoing").sole
+    expect(message.status).to eq("pending")
+    expect(plain(backend.frames.last)).to include("No recipients")
+  end
+
   it "quits through the command palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key
