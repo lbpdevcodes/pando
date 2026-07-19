@@ -42,11 +42,31 @@ module Pando
       when "typing" then [:typing, content.conversation]
       when "contact-request" then contact_exchange.store_request(content, envelope)
       when "contact-accept" then contact_exchange.apply_accept(content, envelope)
+      when "room-create", "room-update" then apply_room_snapshot(content, envelope)
+      when "room-history" then apply_room_history(content, envelope)
       end
     end
 
     def contact_exchange
       ContactExchange.new(my_fingerprint: hub.account.fingerprint)
+    end
+
+    def apply_room_snapshot(content, envelope)
+      RoomSnapshot.apply(content, sender_key: envelope.sender_key,
+        my_fingerprint: hub.account.fingerprint)
+    end
+
+    # History is accepted only from a current participant of a room we already
+    # know — the membership snapshot always travels first, so the inviter is a
+    # contact by the time their backfill arrives.
+    def apply_room_history(content, envelope)
+      conversation = Conversation.find_by(key: content.conversation)
+      sender = Contact.for_sender_key(envelope.sender_key)
+      return nil unless conversation&.room? && sender &&
+        conversation.room_participants.exists?(fingerprint: sender.fingerprint)
+
+      RoomBackfill.apply(content, conversation: conversation,
+        my_fingerprint: hub.account.fingerprint)
     end
 
     def store_text(content, envelope)
@@ -81,9 +101,16 @@ module Pando
       Contact.find_by(fingerprint: peer_fp.first)
     end
 
+    # Text can land on a room key before its membership snapshot (a race the
+    # relay's per-connection ordering makes rare) — create the room shell so the
+    # message isn't lost; the snapshot fills in title and members when it lands.
     def find_or_create_conversation(key, contact)
       Conversation.find_or_create_by!(key: key) do |conversation|
-        conversation.title = contact&.display_name
+        if key.start_with?("room:")
+          conversation.kind = "room"
+        else
+          conversation.title = contact&.display_name
+        end
       end
     end
 

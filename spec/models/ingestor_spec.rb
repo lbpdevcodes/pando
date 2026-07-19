@@ -190,6 +190,57 @@ RSpec.describe Pando::Ingestor do
     end
   end
 
+  describe "rooms" do
+    let(:sender_bundle) { Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account) }
+    let(:room_key) { "room:11111111-2222-3333-4444-555555555555" }
+
+    def my_entry
+      my_bundle = Pando::Crypto::DeviceBundle.issue(device: hub.device, account: hub.account)
+      {"fp" => hub.account.fingerprint, "name" => "Me", "bundles" => [my_bundle.to_h]}
+    end
+
+    def sender_entry
+      {"fp" => sender_account.fingerprint, "name" => "Alice", "bundles" => [sender_bundle.to_h]}
+    end
+
+    it "creates a room with membership from a room-create" do
+      content = Pando::Protocol::Content.new(kind: "room-create", conversation: room_key,
+        body: {"name" => "trio", "members" => [my_entry, sender_entry]})
+
+      result = ingestor.ingest_frame(message_frame(content))
+
+      room = Pando::Conversation.find_by(key: room_key)
+      expect(room.kind).to eq("room")
+      expect(room.room_participants.count).to eq(2)
+      expect(result).to eq([:room, room_key])
+    end
+
+    it "applies room-history only from a current participant" do
+      create = Pando::Protocol::Content.new(kind: "room-create", conversation: room_key,
+        body: {"name" => "trio", "members" => [my_entry, sender_entry]})
+      ingestor.ingest_frame(message_frame(create))
+
+      history = Pando::Protocol::Content.new(kind: "room-history", conversation: room_key,
+        body: {"messages" => [{"id" => "h-1", "sender" => sender_account.fingerprint,
+                               "sent_at" => Time.now.utc.iso8601, "body" => "backfilled", "ttl" => 0}]})
+      outsider = Pando::Crypto::Device.generate
+
+      expect(ingestor.ingest_frame(message_frame(history, from: outsider))).to be_nil
+      expect(Pando::Message.count).to eq(0)
+
+      ingestor.ingest_frame(message_frame(history, from: sender))
+      expect(Pando::Message.sole.body).to eq("backfilled")
+    end
+
+    it "creates room-kind conversations for text arriving on a room key" do
+      text = Pando::Protocol::Content.new(kind: "text", conversation: room_key, body: "hi room")
+
+      ingestor.ingest_frame(message_frame(text))
+
+      expect(Pando::Conversation.find_by(key: room_key).kind).to eq("room")
+    end
+  end
+
   describe "contact requests" do
     let(:sender_bundle) { Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account) }
 

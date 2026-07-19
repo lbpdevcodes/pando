@@ -21,6 +21,10 @@ module Pando
         "dm:#{[fingerprint_a, fingerprint_b].sort.join(":")}"
       end
 
+      def self.room_conversation
+        "room:#{SecureRandom.uuid}"
+      end
+
       def self.from_json(json)
         document = JSON.parse(json)
         new(kind: document.fetch("kind"), conversation: document.fetch("conversation"),

@@ -242,6 +242,33 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).not_to include("key has changed")
   end
 
+  it "creates a room from the palette and lands in it" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"new room".chars, "enter",
+      *"design crew".chars, "enter", "ctrl+c")
+
+    room = Pando::Conversation.find_by(kind: "room")
+    expect(room.display_title).to eq("design crew")
+    expect(room.room_participants.count).to eq(1)
+    frame = plain(backend.frames.last)
+    expect(frame).to include("design crew")
+    expect(frame).to include("1 members")
+  end
+
+  it "refuses to invite into a conversation that is not a room" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"invite to room".chars, "enter", "ctrl+c")
+
+    expect(plain(backend.frames.last)).to include("isn't a room")
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

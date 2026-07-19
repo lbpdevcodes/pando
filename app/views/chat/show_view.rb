@@ -11,7 +11,13 @@ module Pando
 
       def header
         title = active ? active.display_title : "No conversations"
-        row(text(title, style: theme.title), text("  ·  #{status}", style: status_style))
+        row(text(title, style: theme.title), *member_count, text("  ·  #{status}", style: status_style))
+      end
+
+      def member_count
+        return [] unless active&.room?
+
+        [text("  ·  #{active.member_count} members", style: theme.muted)]
       end
 
       def alert_banner

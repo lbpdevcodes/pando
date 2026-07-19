@@ -95,6 +95,7 @@ module Pando
       when :contact_accepted then show_toast("Contact request accepted", kind: :info)
       when :key_changed then show_toast("A contact's key has changed — verify before trusting", kind: :error)
       when :failed then show_toast("A message was rejected by the relay — ctrl+p → Retry failed messages", kind: :error)
+      when :room_removed then show_toast("You were removed from a room", kind: :warn)
       end
     end
   end

@@ -3,6 +3,7 @@
 module Pando
   class Conversation < ApplicationRecord
     has_many :messages, dependent: :destroy
+    has_many :room_participants, dependent: :destroy
 
     attribute :title, :pando_encrypted
 
@@ -15,11 +16,20 @@ module Pando
       title.presence || key
     end
 
-    # The contacts that are participants in this conversation. A DM key embeds the
-    # two account fingerprints ("dm:<fp>:<fp>"); rooms will carry an explicit
-    # membership list once they land.
+    # The contacts that are participants in this conversation. A DM key embeds
+    # the two account fingerprints ("dm:<fp>:<fp>"); rooms carry explicit
+    # membership rows. Our own fingerprint never has a Contact row, so "everyone
+    # but me" falls out of the join — the send path fans out to exactly this.
     def contacts
       Contact.where(fingerprint: participant_fingerprints)
+    end
+
+    def room?
+      kind == "room"
+    end
+
+    def member_count
+      room_participants.count
     end
 
     def touch_activity(at: Time.now.utc)
@@ -29,7 +39,7 @@ module Pando
     private
 
     def participant_fingerprints
-      return [] unless kind == "dm"
+      return room_participants.pluck(:fingerprint) if room?
 
       key.split(":").drop(1)
     end
