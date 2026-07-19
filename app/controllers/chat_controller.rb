@@ -11,6 +11,7 @@ module Pando
     include AttachmentsUi
     include VoiceNotesUi
     include EnrollmentUi
+    include QrInviteUi
 
     focus_ring :sidebar, :composer
 
@@ -239,7 +240,7 @@ module Pando
     # Each modal-owning concern contributes a spec here; the first open one wins.
     def current_modal
       contact_requests_modal || verification_modal || rooms_modal || relays_modal ||
-        attachments_modal || enrollment_modal
+        attachments_modal || enrollment_modal || qr_invite_modal
     end
 
     def conversation_list

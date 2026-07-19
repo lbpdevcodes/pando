@@ -519,6 +519,69 @@ RSpec.describe "Pando journeys" do
     expect(frame).to include("second message")
   end
 
+  it "shows the invite QR fallback text without graphics" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", "q", "r", "enter", "ctrl+c")
+
+    frame = backend.frames.map { |f| plain(f) }.join("\n")
+    expect(frame).to include("share this code")
+    identity = Pando::Store::Keyring.open(path: Pando::Store.keyring_path,
+      passphrase: passphrase).identity
+    account = Pando::Crypto::Identity.account_from(identity)
+    device = Pando::Crypto::Identity.device_from(identity)
+    code = Pando::Invite.encode(
+      bundle: Pando::Crypto::DeviceBundle.issue(device: device, account: account).to_h,
+      name: "me"
+    )
+    expect(frame.gsub(/\s+/, "")).to include(code[0, 40])
+  end
+
+  it "adds a contact from an invite file through the picker" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    code = Pando::Invite.encode(bundle: bundle.to_h, name: "Zoe")
+
+    Dir.mktmpdir do |files_dir|
+      ENV["PANDO_ATTACH_ROOT"] = files_dir
+      File.write(File.join(files_dir, "invite.txt"), code)
+
+      run_journey(*unlock_keys, "ctrl+p", *"load invite".chars, "enter", "enter", "ctrl+c")
+
+      contact = Pando::Contact.find_by(fingerprint: account.fingerprint)
+      expect(contact.display_name).to eq("Zoe")
+      expect(Pando::Conversation.where(kind: "dm").count).to eq(1)
+    ensure
+      ENV.delete("PANDO_ATTACH_ROOT")
+    end
+  end
+
+  it "warns when the picked file is not an invite" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    Dir.mktmpdir do |files_dir|
+      ENV["PANDO_ATTACH_ROOT"] = files_dir
+      File.write(File.join(files_dir, "junk.txt"), "definitely not an invite")
+
+      backend = run_journey(*unlock_keys, "ctrl+p", *"load invite".chars, "enter",
+        "enter", "ctrl+c")
+
+      expect(Pando::Contact.count).to eq(0)
+      expect(plain(backend.frames.last)).to include("isn't an invite")
+    ensure
+      ENV.delete("PANDO_ATTACH_ROOT")
+    end
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key
