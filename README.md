@@ -1,11 +1,21 @@
 # Pando
 
-An end-to-end encrypted terminal messenger. One self-hostable relay, a
-full-screen TUI client, and no server-side plaintext — the relay routes sealed
-envelopes it can never read. Direct messages, group rooms, file and image
-attachments (rendered inline via the Kitty graphics protocol), voice notes,
-multi-device accounts, self-destructing messages, and TOFU identity
-verification. The behavior contract lives in [docs/SPEC.md](docs/SPEC.md).
+<picture>
+  <source srcset="docs/logo.webp" type="image/webp">
+  <img src="docs/logo.webp" alt="Pando" width="160">
+</picture>
+
+Private, encrypted terminal chat. End-to-end encrypted messages between
+people you trust, delivered through self-hosted relays, not stored on them.
+Messages for online recipients are delivered live and never retained by the
+relay; messages sent to offline recipients are queued for up to 24 hours or
+until they log in, whichever comes first.
+
+Direct messages, group rooms, file and image attachments (rendered inline via
+the Kitty graphics protocol), voice notes, multi-device accounts,
+self-destructing messages, and TOFU identity verification — with all local
+data encrypted at rest behind a passphrase. The behavior contract lives in
+[docs/SPEC.md](docs/SPEC.md).
 
 The client targets [Ghostty](https://ghostty.org) (truecolor + Kitty
 graphics); other terminals work with graceful text fallbacks for images.
