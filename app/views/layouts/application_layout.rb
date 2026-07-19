@@ -7,7 +7,7 @@ module Pando
         screen_layout(background: theme.background) do
           split(narrow? ? :vertical : :horizontal, gap: 1) do
             pane(:sidebar, **sidebar_options, border: :rounded, padding: [1, 2], style: sidebar_style) do
-              column(app_title, navigation, shortcuts, gap: 1)
+              column(app_title, sidebar_body, shortcuts, gap: 1)
             end
 
             pane(:content, grow: 1, border: :rounded, padding: [1, 2], style: content_style) do
@@ -39,6 +39,13 @@ module Pando
 
       def app_title
         text "Pando", style: theme.header_accent.align(:center).width(sidebar_inner_width)
+      end
+
+      # Controllers may hand the sidebar a component (the chat conversation list);
+      # without one, the route navigation renders as generated.
+      def sidebar_body
+        component = assigns.fetch(:sidebar, nil)
+        component ? render_component(component) : navigation
       end
 
       def navigation

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
 Pando::Application.routes do
-  root "home#show"
+  root "chat#show", title: "Chats"
+  screen "/onboarding", to: "onboarding#show", title: "Unlock"
 end

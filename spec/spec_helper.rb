@@ -12,7 +12,12 @@ else
   ActiveRecord::MigrationContext.new(File.expand_path("../db/migrate", __dir__)).migrate
 end
 
+# A fixed data key so encrypted columns work in tests without a keyring unlock.
+TEST_DATA_KEY = RbNaCl::Hash.sha256("pando test data key")
+
 RSpec.configure do |config|
+  config.before(:each) { Pando::Store.data_key = TEST_DATA_KEY }
+
   # Roll back database writes after each example so tests stay isolated.
   config.around(:each) do |example|
     ActiveRecord::Base.transaction(requires_new: true) do
