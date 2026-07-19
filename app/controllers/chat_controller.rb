@@ -35,6 +35,7 @@ module Pando
       return navigate_to("/onboarding") unless Store.unlocked?
 
       persist_component_state
+      clear_active_unread
       render :show,
         sidebar: conversation_list,
         transcript: transcript,
@@ -45,6 +46,7 @@ module Pando
         modal: current_modal,
         alert: key_change_alert,
         recording_elapsed: recording_elapsed,
+        typing: active_conversation ? typing_in?(active_conversation.key) : false,
         palette: command_palette
     end
 
@@ -292,6 +294,30 @@ module Pando
       @active_conversation = nil
     end
 
+    # Looking at the bottom of the active conversation counts as reading it.
+    def clear_active_unread
+      conversation = active_conversation
+      return unless conversation && chat_state.follow && conversation.unread_count.positive?
+
+      conversation.update!(unread_count: 0)
+    end
+
+    # A throttled ephemeral typing signal on composer changes. ttl 1 keeps the
+    # relay from holding stale hints for offline peers (SPEC: typing is never
+    # meaningfully queued).
+    def maybe_send_typing(previous, current)
+      return if current == previous || current.strip.empty?
+      return unless hub && active_conversation
+
+      now = Time.now.to_f
+      return if now - (session[:typing_sent_at] || 0.0) < 4
+
+      session[:typing_sent_at] = now
+      content = Protocol::Content.new(kind: "typing", conversation: active_conversation.key,
+        body: {}, ttl: 1)
+      deliver_content(content, to_bundles: recipient_bundles(active_conversation))
+    end
+
     def my_display_name
       "me"
     end
@@ -299,6 +325,7 @@ module Pando
     def persist_component_state
       chat_state.transcript_offset = transcript.offset
       chat_state.follow = transcript.at_bottom?
+      maybe_send_typing(composer_state[:value], composer.value)
       composer_state[:value] = composer.value
       add_contact_state[:value] = add_contact_input.value if add_contact_open?
       persist_contact_request_state

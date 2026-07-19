@@ -56,6 +56,7 @@ module Pando
           sender_fingerprint: sender_fingerprint, content_id: content.id,
           sent_at: parse_time(content.sent_at))
         conversation.touch_activity
+        conversation.increment!(:unread_count)
         message
       rescue ActiveRecord::RecordNotUnique
         nil

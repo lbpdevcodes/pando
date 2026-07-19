@@ -9,5 +9,16 @@ module Pando
     end
 
     default_theme :phosphor
+
+    def initialize
+      super
+      saved = Settings.load["theme"]
+      session[:theme] ||= saved.to_sym if saved
+    end
+
+    def use_theme(name)
+      super
+      Settings.save(theme: name)
+    end
   end
 end

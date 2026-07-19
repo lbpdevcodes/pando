@@ -40,8 +40,13 @@ module Pando
     def row_for(conversation, index)
       cursor = (focused && index == cursor_index) ? ">" : " "
       active = (conversation.id == active_id) ? "\u{25cf}" : " "
-      text "#{cursor} #{active} #{conversation.display_title}#{trust_glyph(conversation)}",
+      text "#{cursor} #{active} #{conversation.display_title}#{trust_glyph(conversation)}#{unread_suffix(conversation)}",
         style: row_style(conversation, index)
+    end
+
+    def unread_suffix(conversation)
+      count = conversation.unread_count
+      count.positive? ? " (#{count})" : ""
     end
 
     def trust_glyph(conversation)

@@ -46,6 +46,13 @@ RSpec.describe Pando::Ingestor do
     expect(hub.acked).to eq([9])
   end
 
+  it "counts incoming text as unread" do
+    ingestor.ingest_frame(message_frame(text_content("one"), seq: 1))
+    ingestor.ingest_frame(message_frame(text_content("two", id: "u2"), seq: 2))
+
+    expect(Pando::Conversation.find_by(key: conversation_key).unread_count).to eq(2)
+  end
+
   it "drops replayed content ids without duplicating messages" do
     content = text_content("only once", id: "fixed-id")
     ingestor.ingest_frame(message_frame(content, seq: 1))
@@ -147,7 +154,7 @@ RSpec.describe Pando::Ingestor do
       result = ingestor.ingest_frame(error_frame(code: "queue_full"))
 
       expect(outgoing.reload.status).to eq("failed")
-      expect(result).to eq([:failed, conversation_key])
+      expect(result).to eq([:relay_error, "queue_full", conversation_key])
     end
 
     it "marks the referenced message failed on frame_too_large" do
@@ -165,10 +172,28 @@ RSpec.describe Pando::Ingestor do
       expect(result).to be_nil
     end
 
-    it "ignores connection-scoped errors and unknown refs" do
-      expect(ingestor.ingest_frame(error_frame(code: "unauthorized", ref: nil))).to be_nil
+    it "surfaces connection-scoped errors without touching messages" do
+      expect(ingestor.ingest_frame(error_frame(code: "unauthorized", ref: nil)))
+        .to eq([:relay_error, "unauthorized", nil])
+      expect(ingestor.ingest_frame(error_frame(code: "bad_frame", ref: nil)))
+        .to eq([:relay_error, "bad_frame", nil])
       expect(ingestor.ingest_frame(error_frame(code: "queue_full", ref: "nope/mbox"))).to be_nil
       expect(outgoing.reload.status).to eq("pending")
+    end
+
+    it "fails the attachment and its message on an att-prefixed error ref" do
+      attachment_message = conversation.messages.create!(direction: "outgoing",
+        kind: "attachment", body: "big.bin", status: "pending", sent_at: Time.now.utc,
+        content_id: "att-man-1")
+      attachment = Pando::Attachment.create!(message: attachment_message,
+        attachment_id: "att-x", name: "big.bin", size: 10, digest: "d",
+        total_chunks: 4, status: "sending")
+
+      result = ingestor.ingest_frame(error_frame(code: "queue_full", ref: "att:att-x:2/mbox"))
+
+      expect(attachment.reload.status).to eq("failed")
+      expect(attachment_message.reload.status).to eq("failed")
+      expect(result).to eq([:relay_error, "queue_full", conversation_key])
     end
   end
 

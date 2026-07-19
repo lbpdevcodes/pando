@@ -11,8 +11,14 @@ module Pando
 
       def header
         title = active ? active.display_title : "No conversations"
-        row(text(title, style: theme.title), *member_count, *ttl_badge,
+        row(text(title, style: theme.title), *member_count, *ttl_badge, *typing_hint,
           text("  ·  #{status}", style: status_style))
+      end
+
+      def typing_hint
+        return [] unless typing
+
+        [text("  ·  typing…", style: theme.info)]
       end
 
       def ttl_badge

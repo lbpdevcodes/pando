@@ -113,6 +113,7 @@ module Pando
       return nil unless record_message(conversation, content, contact)
 
       conversation.touch_activity
+      conversation.increment!(:unread_count)
       send_delivered_receipt(content, contact) if contact
       return [:key_changed, conversation.key] if detect_key_change(conversation, contact)
 
@@ -242,17 +243,29 @@ module Pando
 
     # queue_full and frame_too_large reference the rejected send (ref is the
     # outbox's "<content_id>/<mailbox>" id) — mark that message failed so the UI
-    # shows the ✗ and offers retry. unauthorized/bad_frame are connection-scoped.
+    # shows the ✗ and offers retry. unauthorized/bad_frame carry no message but
+    # still surface so the user learns the connection itself is unhealthy.
     MESSAGE_ERROR_CODES = %w[queue_full frame_too_large].freeze
 
     def apply_send_error(frame)
-      return nil unless MESSAGE_ERROR_CODES.include?(frame.code)
+      reference = frame.ref.to_s
+      return fail_attachment(frame.code, reference) if reference.start_with?("att:")
+      return [:relay_error, frame.code, nil] unless MESSAGE_ERROR_CODES.include?(frame.code)
 
-      message = outgoing_message(frame.ref.to_s.split("/").first)
+      message = outgoing_message(reference.split("/").first)
       return nil unless message && message.status != "delivered"
 
       message.update!(status: "failed")
-      [:failed, message.conversation.key]
+      [:relay_error, frame.code, message.conversation.key]
+    end
+
+    def fail_attachment(code, reference)
+      attachment = Attachment.outgoing_for(reference.split(":")[1])
+      return nil unless attachment
+
+      attachment.update!(status: "failed")
+      attachment.message.update!(status: "failed") unless attachment.message.status == "delivered"
+      [:relay_error, code, attachment.message.conversation.key]
     end
 
     # Receipts always concern our outgoing copy — the peer's incoming copy shares

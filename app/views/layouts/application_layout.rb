@@ -18,6 +18,7 @@ module Pando
           overlay add_contact_modal if add_contact_modal
           overlay generic_modal if generic_modal
           overlay command_palette_modal if command_palette_modal
+          overlay help_modal, z_index: 5 if help_modal
           overlay toast, top: screen.height - 5, left: :center, z_index: 10 if toast
         end
       end
@@ -46,6 +47,12 @@ module Pando
       end
 
       private
+
+      def help_modal
+        return unless controller.session[:help_open]
+
+        render_component controller.help_overlay
+      end
 
       def toast
         toast_state = controller.session[:toast]
@@ -112,7 +119,7 @@ module Pando
       end
 
       def shortcuts
-        text "tab focus\nctrl+p commands\nq quit", style: theme.muted
+        text "tab focus\nctrl+p commands\n? help\nq quit", style: theme.muted
       end
 
       def sidebar_style

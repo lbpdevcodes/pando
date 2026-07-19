@@ -139,14 +139,37 @@ module Pando
       notify_ingest(Ingestor.new(hub: hub).ingest_frame(frame))
     end
 
+    # Human copy for the relay's error codes — every code the relay can send
+    # has a sentence, never a silent drop.
+    RELAY_ERROR_COPY = {
+      "queue_full" => "Their relay inbox is full — message not delivered, retry later (ctrl+p → Retry failed messages)",
+      "frame_too_large" => "The relay rejected a frame as too large — try a smaller attachment",
+      "unauthorized" => "The relay rejected our credentials — check the relay token (ctrl+p → Switch relay)",
+      "bad_frame" => "The relay didn't understand a frame — client/relay version mismatch?"
+    }.freeze
+
     def notify_ingest(result)
-      case result&.first
+      kind, detail = result
+      case kind
       when :contact_request then show_toast("New contact request — ctrl+p → Contact requests", kind: :info)
       when :contact_accepted then show_toast("Contact request accepted", kind: :info)
       when :key_changed then show_toast("A contact's key has changed — verify before trusting", kind: :error)
-      when :failed then show_toast("A message was rejected by the relay — ctrl+p → Retry failed messages", kind: :error)
+      when :relay_error
+        show_toast(RELAY_ERROR_COPY.fetch(detail, "Relay error: #{detail}"), kind: :error)
       when :room_removed then show_toast("You were removed from a room", kind: :warn)
+      when :typing then note_typing(detail)
       end
+    end
+
+    # Ephemeral typing hints: a per-conversation timestamp the header reads;
+    # the typing_expiry timer clears stale entries.
+    def note_typing(conversation_key)
+      (session[:typing] ||= {})[conversation_key] = Time.now.to_f
+    end
+
+    def typing_in?(conversation_key)
+      stamp = session[:typing]&.fetch(conversation_key, nil)
+      !!stamp && Time.now.to_f - stamp < 6
     end
   end
 end

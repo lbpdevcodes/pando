@@ -582,6 +582,48 @@ RSpec.describe "Pando journeys" do
     end
   end
 
+  it "opens the help overlay with ? from the sidebar and dismisses it" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "?", "escape", "q")
+
+    frames = backend.frames.map { |f| plain(f) }
+    expect(frames.join).to include("Keyboard Shortcuts")
+    expect(frames.last).not_to include("Keyboard Shortcuts")
+  end
+
+  it "types ? into the composer instead of opening help" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    run_journey(*unlock_keys, "tab", *"really?".chars, "enter", "ctrl+c")
+
+    expect(Pando::Message.where(direction: "outgoing").sole.body).to eq("really?")
+  end
+
+  it "shows unread badges and clears them when the conversation is opened" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation(title: "Alice")
+    quiet = Pando::Conversation.create!(key: "dm:test:zoe", title: "Zoe",
+      last_activity_at: Time.now.utc - 600, unread_count: 2)
+    quiet.messages.create!(direction: "incoming", body: "unseen", status: "delivered",
+      sent_at: Time.now.utc - 600, content_id: "unseen-1")
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "j", "enter", "ctrl+c")
+
+    frames = backend.frames.map { |f| plain(f) }
+    expect(frames.find { |f| f.include?("Zoe") }).to include("Zoe (2)")
+    expect(quiet.reload.unread_count).to eq(0)
+    expect(frames.last).not_to include("Zoe (2)")
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key
