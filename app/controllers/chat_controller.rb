@@ -13,6 +13,9 @@ module Pando
     # this content-scoped binding is the send action (sidebar Enter still selects).
     key "enter", :send_message
 
+    command "Add contact", :open_add_contact
+    command "Copy my invite code", :show_my_invite
+
     def show
       return navigate_to("/onboarding") unless Store.unlocked?
 
@@ -22,7 +25,53 @@ module Pando
         transcript: transcript,
         composer: composer,
         active: active_conversation,
+        status: connection_status,
+        add_contact: add_contact_open? ? add_contact_input : nil,
         palette: command_palette
+    end
+
+    def open_add_contact
+      close_command_palette
+      session[:add_contact_open] = true
+      focus.push_scope([:add_contact_input], origin: :modal)
+      show
+    end
+
+    # Focus slot: the invite-code entry inside the add-contact modal.
+    def add_contact_input
+      @add_contact_input ||= Charming::Components::TextInput.new(
+        value: add_contact_state[:value], width: 52, placeholder: "paste an invite code"
+      )
+    end
+
+    def add_contact_input_submitted(value)
+      invite = Invite.decode(value.strip)
+      AddContact.new(my_fingerprint: my_fingerprint).call(invite)
+      close_add_contact
+      show_toast("Added #{invite.name}")
+      reload_conversations
+      show
+    rescue Invite::Malformed
+      show_toast("That isn't a valid invite code", kind: :warn)
+      add_contact_state[:value] = ""
+      @add_contact_input = nil
+      show
+    end
+
+    def add_contact_input_cancelled
+      close_add_contact
+      show
+    end
+
+    def show_my_invite
+      close_command_palette
+      code = hub ? hub.invite_code(name: my_display_name) : "(offline — reconnect to generate)"
+      show_toast("Your invite code copied to the transcript")
+      Conversation.find_or_create_by!(key: "self:notes") { |c| c.title = "My invite code" }
+        .messages.create!(direction: "incoming", body: code, status: "delivered",
+          sent_at: Time.now.utc, content_id: SecureRandom.uuid)
+      reload_conversations
+      show
     end
 
     # Focus slot: the message composer. Enter submits, shift+enter inserts a newline.
@@ -102,11 +151,31 @@ module Pando
     end
 
     def append_outgoing(conversation, text)
-      conversation.messages.create!(
+      message = conversation.messages.create!(
         direction: "outgoing", body: text, status: "pending",
         sent_at: Time.now.utc, content_id: SecureRandom.uuid
       )
       conversation.touch_activity
+      transmit(conversation, message, text)
+    end
+
+    # Fan the text out to every participant's device bundle. With no recipients
+    # (contact not yet resolved) the message stays local as pending.
+    def transmit(conversation, message, text)
+      bundles = recipient_bundles(conversation)
+      return if bundles.empty?
+
+      content = Protocol::Content.new(kind: "text", conversation: conversation.key,
+        body: text, id: message.content_id, ttl: conversation_ttl)
+      deliver_content(content, to_bundles: bundles)
+    end
+
+    def recipient_bundles(conversation)
+      conversation.contacts.filter_map(&:device_bundle)
+    end
+
+    def conversation_ttl
+      0
     end
 
     def conversations
@@ -146,14 +215,39 @@ module Pando
       active_conversation ? "Message #{active_conversation.display_title}…" : "No conversation selected"
     end
 
+    def add_contact_open?
+      session[:add_contact_open]
+    end
+
+    def close_add_contact
+      session[:add_contact_open] = false
+      add_contact_state[:value] = ""
+      @add_contact_input = nil
+      focus.pop_scope
+    end
+
+    def reload_conversations
+      @conversations = nil
+      @active_conversation = nil
+    end
+
+    def my_display_name
+      "me"
+    end
+
     def persist_component_state
       chat_state.transcript_offset = transcript.offset
       chat_state.follow = transcript.at_bottom?
       composer_state[:value] = composer.value
+      add_contact_state[:value] = add_contact_input.value if add_contact_open?
     end
 
     def composer_state
       component_state(composer_key, value: "")
+    end
+
+    def add_contact_state
+      component_state(:add_contact, value: "")
     end
 
     def transcript_width

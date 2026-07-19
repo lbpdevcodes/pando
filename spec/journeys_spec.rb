@@ -120,6 +120,24 @@ RSpec.describe "Pando journeys" do
     expect(frames.last).to include("note number 60")
   end
 
+  it "adds a contact from an invite code through the palette" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    code = Pando::Invite.encode(bundle: bundle.to_h, name: "Zoe")
+
+    run_journey(*unlock_keys, "ctrl+p", *"add contact".chars, "enter", *code.chars, "enter", "ctrl+c")
+
+    contact = Pando::Contact.find_by(fingerprint: account.fingerprint)
+    expect(contact).not_to be_nil
+    expect(contact.display_name).to eq("Zoe")
+    expect(Pando::Conversation.where(kind: "dm").count).to eq(1)
+  end
+
   it "quits through the command palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

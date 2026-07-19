@@ -17,6 +17,7 @@ loader.push_dir(File.expand_path("../app/state", __dir__), namespace: Pando)
 loader.push_dir(File.expand_path("../app/components", __dir__), namespace: Pando)
 loader.push_dir(File.expand_path("../app/views", __dir__), namespace: Pando)
 loader.push_dir(File.expand_path("../app/controllers", __dir__), namespace: Pando)
+loader.collapse(File.expand_path("../app/controllers/concerns", __dir__))
 loader.setup
 
 require_relative "../config/routes"

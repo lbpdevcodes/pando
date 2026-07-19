@@ -2,6 +2,8 @@
 
 module Pando
   class ApplicationController < Charming::Controller
+    include Connectivity
+
     layout Layouts::ApplicationLayout
     focus_ring :sidebar, :content
 

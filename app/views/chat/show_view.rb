@@ -11,7 +11,11 @@ module Pando
 
       def header
         title = active ? active.display_title : "No conversations"
-        text title, style: theme.title
+        row(text(title, style: theme.title), text("  ·  #{status}", style: status_style))
+      end
+
+      def status_style
+        (status == "online") ? theme.info : theme.muted
       end
 
       def transcript_block

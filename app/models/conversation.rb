@@ -15,8 +15,23 @@ module Pando
       title.presence || key
     end
 
+    # The contacts that are participants in this conversation. A DM key embeds the
+    # two account fingerprints ("dm:<fp>:<fp>"); rooms will carry an explicit
+    # membership list once they land.
+    def contacts
+      Contact.where(fingerprint: participant_fingerprints)
+    end
+
     def touch_activity(at: Time.now.utc)
       update!(last_activity_at: at)
+    end
+
+    private
+
+    def participant_fingerprints
+      return [] unless kind == "dm"
+
+      key.split(":").drop(1)
     end
   end
 end

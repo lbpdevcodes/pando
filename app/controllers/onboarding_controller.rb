@@ -36,6 +36,7 @@ module Pando
       return show unless keyring
 
       Store.data_key = keyring.data_key
+      session[:identity] = keyring.identity
       passphrase_state[:value] = ""
       DemoSeed.plant if ENV["PANDO_DEMO"]
       navigate_to "/"

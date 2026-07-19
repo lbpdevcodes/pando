@@ -15,8 +15,19 @@ module Pando
             end
           end
 
+          overlay add_contact_modal if add_contact_modal
           overlay command_palette_modal if command_palette_modal
         end
+      end
+
+      def add_contact_modal
+        input = assigns.fetch(:add_contact, nil)
+        return unless input
+
+        render_component Charming::Components::Modal.new(
+          title: "Add contact", content: render_component(input),
+          help: "enter add · esc cancel", theme: theme
+        )
       end
 
       private

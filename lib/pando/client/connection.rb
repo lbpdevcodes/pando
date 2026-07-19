@@ -51,12 +51,16 @@ module Pando
         @subscribed = reply
       end
 
+      def send_frame(frame)
+        @driver.text(frame.encode)
+      end
+
       def send_envelope(id:, to:, envelope:, ttl:)
-        @driver.text(Protocol::Frames::Send.new(id: id, to: to, envelope: envelope, ttl: ttl).encode)
+        send_frame(Protocol::Frames::Send.new(id: id, to: to, envelope: envelope, ttl: ttl))
       end
 
       def ack(seq)
-        @driver.text(Protocol::Frames::Ack.new(seq: seq).encode)
+        send_frame(Protocol::Frames::Ack.new(seq: seq))
       end
 
       # Blocks until the next frame arrives (or WaitTimeout).
