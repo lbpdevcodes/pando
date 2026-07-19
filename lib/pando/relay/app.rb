@@ -43,7 +43,10 @@ module Pando
       attr_reader :directory, :queue, :registry, :rendezvous, :limits, :token
 
       def route(request)
+        # async-http yields ASCII-8BIT paths; sqlite3 binds binary strings as
+        # BLOBs, which silently never match TEXT columns — normalize up front.
         segments = request.path.delete_prefix("/").split("/")
+          .map { |segment| segment.dup.force_encoding(Encoding::UTF_8) }
         case [request.method, segments.first(2)]
         in ["GET", ["v1", "ws"]] then upgrade(request)
         in ["GET", ["v1", "health"]] then respond(200, ok: true)

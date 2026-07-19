@@ -51,7 +51,8 @@ module Pando
     end
 
     def build_hub
-      Client::Hub.new(identity: session[:identity], relay_url: relay_url)
+      Client::Hub.new(identity: session[:identity], relay_url: relay_url,
+        discoverable: Setting.get("discoverable") == "1")
     end
 
     def hub
@@ -79,7 +80,14 @@ module Pando
     end
 
     def ingest(frame)
-      Ingestor.new(hub: hub).ingest_frame(frame)
+      notify_ingest(Ingestor.new(hub: hub).ingest_frame(frame))
+    end
+
+    def notify_ingest(result)
+      case result&.first
+      when :contact_request then show_toast("New contact request — ctrl+p → Contact requests", kind: :info)
+      when :contact_accepted then show_toast("Contact request accepted", kind: :info)
+      end
     end
   end
 end

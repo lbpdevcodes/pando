@@ -39,7 +39,13 @@ module Pando
       when "text" then store_text(content, envelope)
       when "receipt" then apply_e2e_receipt(content)
       when "typing" then [:typing, content.conversation]
+      when "contact-request" then contact_exchange.store_request(content, envelope)
+      when "contact-accept" then contact_exchange.apply_accept(content, envelope)
       end
+    end
+
+    def contact_exchange
+      ContactExchange.new(my_fingerprint: hub.account.fingerprint)
     end
 
     def store_text(content, envelope)

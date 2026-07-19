@@ -16,7 +16,9 @@ module Pando
           end
 
           overlay add_contact_modal if add_contact_modal
+          overlay generic_modal if generic_modal
           overlay command_palette_modal if command_palette_modal
+          overlay toast, top: screen.height - 5, left: :center, z_index: 10 if toast
         end
       end
 
@@ -30,7 +32,31 @@ module Pando
         )
       end
 
+      # Controllers open one modal at a time through the :modal assign —
+      # {title:, content:, help:} with content either a component or plain text.
+      def generic_modal
+        spec = assigns.fetch(:modal, nil)
+        return unless spec
+
+        content = spec[:content]
+        content = render_component(content) if content.respond_to?(:render)
+        render_component Charming::Components::Modal.new(
+          title: spec[:title], content: content, help: spec[:help], theme: theme
+        )
+      end
+
       private
+
+      def toast
+        toast_state = controller.session[:toast]
+        return unless toast_state
+
+        render_component Charming::Components::Toast.new(
+          message: toast_state[:message],
+          kind: toast_state.fetch(:kind, :info),
+          theme: theme
+        )
+      end
 
       def palette_component
         assigns.fetch(:palette, nil)

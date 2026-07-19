@@ -4,23 +4,34 @@ module Pando
   # ConversationList renders the sidebar: one row per conversation with a cursor
   # (sidebar focus), an active-conversation marker, and room for unread badges.
   class ConversationList < Charming::Component
-    def initialize(conversations:, cursor_index:, active_id:, focused:, theme:)
+    def initialize(conversations:, cursor_index:, active_id:, focused:, theme:, request_count: 0)
       super(theme: theme)
       @conversations = conversations
       @cursor_index = cursor_index
       @active_id = active_id
       @focused = focused
+      @request_count = request_count
     end
 
     def render
-      return text("No conversations yet.", style: theme.muted) if conversations.empty?
+      return column(*badge_rows, empty_row) if conversations.empty?
 
-      column(*rows)
+      column(*badge_rows, *rows)
     end
 
     private
 
-    attr_reader :conversations, :cursor_index, :active_id, :focused
+    attr_reader :conversations, :cursor_index, :active_id, :focused, :request_count
+
+    def badge_rows
+      return [] unless request_count.positive?
+
+      [text("! #{request_count} request#{"s" if request_count != 1}", style: theme.title)]
+    end
+
+    def empty_row
+      text("No conversations yet.", style: theme.muted)
+    end
 
     def rows
       conversations.each_with_index.map { |conversation, index| row_for(conversation, index) }

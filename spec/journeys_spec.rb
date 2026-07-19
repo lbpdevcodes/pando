@@ -130,12 +130,83 @@ RSpec.describe "Pando journeys" do
     bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
     code = Pando::Invite.encode(bundle: bundle.to_h, name: "Zoe")
 
-    run_journey(*unlock_keys, "ctrl+p", *"add contact".chars, "enter", *code.chars, "enter", "ctrl+c")
+    backend = run_journey(*unlock_keys, "ctrl+p", *"add contact".chars, "enter", *code.chars, "enter", "ctrl+c")
 
     contact = Pando::Contact.find_by(fingerprint: account.fingerprint)
     expect(contact).not_to be_nil
     expect(contact.display_name).to eq("Zoe")
     expect(Pando::Conversation.where(kind: "dm").count).to eq(1)
+    expect(plain(backend.frames.last)).to include("Added Zoe")
+  end
+
+  def seed_contact_request(name: "Zoe")
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    Pando::ContactRequest.create!(fingerprint: account.fingerprint, direction: "incoming",
+      name: name, bundle: JSON.generate(bundle.to_h), status: "pending",
+      content_id: SecureRandom.uuid)
+  end
+
+  it "accepts a contact request from the inbox" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    request = seed_contact_request
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"contact requests".chars, "enter", "a", "ctrl+c")
+
+    expect(request.reload.status).to eq("accepted")
+    contact = Pando::Contact.find_by(fingerprint: request.fingerprint)
+    expect(contact.display_name).to eq("Zoe")
+    expect(Pando::Conversation.where(kind: "dm").count).to eq(1)
+    expect(backend.frames.map { |f| plain(f) }.join).to include("Zoe")
+  end
+
+  it "declines a contact request without creating a contact" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    request = seed_contact_request
+    Pando::Store.lock!
+
+    run_journey(*unlock_keys, "ctrl+p", *"contact requests".chars, "enter", "d", "ctrl+c")
+
+    expect(request.reload.status).to eq("declined")
+    expect(Pando::Contact.count).to eq(0)
+  end
+
+  it "shows a pending contact request badge in the sidebar" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_contact_request
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "q")
+
+    expect(plain(backend.frames.last)).to include("! 1 request")
+  end
+
+  it "toggles directory discoverability from the palette" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"discover".chars, "enter", "ctrl+c")
+
+    expect(Pando::Setting.get("discoverable")).to eq("1")
+    expect(plain(backend.frames.last)).to include("discoverable by fingerprint")
+  end
+
+  it "rejects a malformed fingerprint in the find-contact modal" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"find contact".chars, "enter",
+      *"nope".chars, "enter", "ctrl+c")
+
+    expect(plain(backend.frames.last)).to include("16-hex")
+    expect(Pando::ContactRequest.count).to eq(0)
   end
 
   it "quits through the command palette" do

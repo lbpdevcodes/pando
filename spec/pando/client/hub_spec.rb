@@ -21,8 +21,9 @@ RSpec.describe Pando::Client::Hub do
     Timeout.timeout(timeout) { sleep 0.02 until yield }
   end
 
-  def build_hub(port)
-    described_class.new(identity: Pando::Crypto::Identity.generate, relay_url: "http://127.0.0.1:#{port}")
+  def build_hub(port, **options)
+    described_class.new(identity: Pando::Crypto::Identity.generate,
+      relay_url: "http://127.0.0.1:#{port}", **options)
   end
 
   context "with a live relay" do
@@ -47,11 +48,30 @@ RSpec.describe Pando::Client::Hub do
       end
     end
 
-    def start_hub
-      @hub = build_hub(@port)
+    def start_hub(**options)
+      @hub = build_hub(@port, **options)
       @hub_thread = Thread.new { @hub.run(recorder) }
       wait_until { recorder.reports.any? { |r| r && r["value"] == "online" } }
       @hub
+    end
+
+    it "publishes undiscoverably by default and discoverably when asked" do
+      hub = start_hub(discoverable: true)
+
+      bundles = Pando::Relay::Directory.new(@db_path).discover(fingerprint: hub.account.fingerprint)
+      expect(bundles).not_to be_empty
+    end
+
+    it "republishes when discoverability is toggled at runtime" do
+      hub = start_hub
+      directory = Pando::Relay::Directory.new(@db_path)
+      expect(directory.discover(fingerprint: hub.account.fingerprint)).to be_empty
+
+      hub.discoverable = true
+
+      wait_until { directory.discover(fingerprint: hub.account.fingerprint).any? }
+      hub.discoverable = false
+      wait_until { directory.discover(fingerprint: hub.account.fingerprint).empty? }
     end
 
     it "publishes its bundle and reports online" do

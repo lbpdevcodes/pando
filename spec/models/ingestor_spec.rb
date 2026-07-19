@@ -3,7 +3,7 @@
 RSpec.describe Pando::Ingestor do
   let(:hub) do
     Class.new do
-      attr_accessor :device
+      attr_accessor :device, :account
       attr_reader :acked, :sent
 
       def initialize = (@acked = []) && (@sent = [])
@@ -11,7 +11,10 @@ RSpec.describe Pando::Ingestor do
       def ack(seq) = @acked << seq
 
       def send_envelope(**frame) = @sent << frame
-    end.new.tap { |h| h.device = Pando::Crypto::Device.generate }
+    end.new.tap do |h|
+      h.device = Pando::Crypto::Device.generate
+      h.account = Pando::Crypto::Account.generate
+    end
   end
 
   let(:ingestor) { described_class.new(hub: hub) }
@@ -109,5 +112,100 @@ RSpec.describe Pando::Ingestor do
 
     expect(result).to eq([:typing, conversation_key])
     expect(Pando::Message.count).to eq(0)
+  end
+
+  describe "contact requests" do
+    let(:sender_bundle) { Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account) }
+
+    def request_content(bundle: sender_bundle, id: nil)
+      args = {kind: "contact-request", conversation: conversation_key,
+              body: {"name" => "Zoe", "bundle" => bundle.to_h, "greeting" => nil}}
+      args[:id] = id if id
+      Pando::Protocol::Content.new(**args)
+    end
+
+    def accept_content(bundle: sender_bundle)
+      Pando::Protocol::Content.new(kind: "contact-accept", conversation: conversation_key,
+        body: {"name" => "Zoe", "bundle" => bundle.to_h})
+    end
+
+    it "stores an incoming contact request in the inbox without creating a conversation" do
+      result = ingestor.ingest_frame(message_frame(request_content))
+
+      request = Pando::ContactRequest.inbox.sole
+      expect(request.fingerprint).to eq(sender_account.fingerprint)
+      expect(request.display_name).to eq("Zoe")
+      expect(result).to eq([:contact_request, sender_account.fingerprint])
+      expect(Pando::Conversation.count).to eq(0)
+    end
+
+    it "drops a request whose bundle does not match the sealing device" do
+      impostor = Pando::Crypto::Device.generate
+
+      result = ingestor.ingest_frame(message_frame(request_content, from: impostor))
+
+      expect(result).to be_nil
+      expect(Pando::ContactRequest.count).to eq(0)
+    end
+
+    it "ignores a request from an already-known contact" do
+      Pando::Contact.create!(fingerprint: sender_account.fingerprint, name: "Zoe",
+        bundle: JSON.generate(sender_bundle.to_h))
+
+      result = ingestor.ingest_frame(message_frame(request_content))
+
+      expect(result).to be_nil
+      expect(Pando::ContactRequest.count).to eq(0)
+    end
+
+    it "keeps a declined request declined when the peer re-requests" do
+      Pando::ContactRequest.create!(fingerprint: sender_account.fingerprint, direction: "incoming",
+        status: "declined", bundle: JSON.generate(sender_bundle.to_h), content_id: "old")
+
+      ingestor.ingest_frame(message_frame(request_content))
+
+      expect(Pando::ContactRequest.sole.status).to eq("declined")
+    end
+
+    it "drops a replayed request content id" do
+      content = request_content(id: "req-once")
+
+      ingestor.ingest_frame(message_frame(content, seq: 1))
+      Pando::ContactRequest.sole.update!(status: "declined")
+      ingestor.ingest_frame(message_frame(content, seq: 2))
+
+      expect(Pando::ContactRequest.sole.status).to eq("declined")
+    end
+
+    it "accepts a contact-accept by creating the contact and closing the outgoing request" do
+      Pando::ContactRequest.create!(fingerprint: sender_account.fingerprint, direction: "outgoing",
+        status: "pending", bundle: JSON.generate(sender_bundle.to_h), content_id: "out-req")
+
+      result = ingestor.ingest_frame(message_frame(accept_content))
+
+      expect(Pando::ContactRequest.sole.status).to eq("accepted")
+      contact = Pando::Contact.find_by(fingerprint: sender_account.fingerprint)
+      expect(contact.display_name).to eq("Zoe")
+      expect(Pando::Conversation.where(kind: "dm").count).to eq(1)
+      expect(result).to eq([:contact_accepted, sender_account.fingerprint])
+    end
+
+    it "drops a contact-accept with no matching outgoing request" do
+      result = ingestor.ingest_frame(message_frame(accept_content))
+
+      expect(result).to be_nil
+      expect(Pando::Contact.count).to eq(0)
+    end
+
+    it "drops a spoofed contact-accept" do
+      Pando::ContactRequest.create!(fingerprint: sender_account.fingerprint, direction: "outgoing",
+        status: "pending", bundle: JSON.generate(sender_bundle.to_h), content_id: "out-req")
+      impostor = Pando::Crypto::Device.generate
+
+      result = ingestor.ingest_frame(message_frame(accept_content, from: impostor))
+
+      expect(result).to be_nil
+      expect(Pando::ContactRequest.sole.status).to eq("pending")
+    end
   end
 end

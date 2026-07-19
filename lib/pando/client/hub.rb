@@ -17,15 +17,24 @@ module Pando
 
       attr_reader :account, :device
 
-      def initialize(identity:, relay_url:, directory: nil, backoff: Backoff.new)
+      def initialize(identity:, relay_url:, directory: nil, backoff: Backoff.new, discoverable: false)
         @account = Crypto::Identity.account_from(identity)
         @device = Crypto::Identity.device_from(identity)
         @relay_url = relay_url
         @directory = directory || DirectoryClient.new(relay_url)
         @backoff = backoff
+        @discoverable = discoverable
+        @republish = false
         @outgoing = Thread::Queue.new
         @stop = false
         @seq = 0
+      end
+
+      # Toggling discoverability republishes from inside the hub thread on the
+      # next pump tick, keeping HTTP off the caller's (UI) thread.
+      def discoverable=(flag)
+        @discoverable = flag
+        @republish = true
       end
 
       def bundle
@@ -60,7 +69,7 @@ module Pando
 
       def attempt(progress)
         connection = nil
-        directory.publish(bundle.to_h)
+        directory.publish(bundle.to_h, discoverable: @discoverable)
         connection = Connection.open(ws_url, device: device)
         backoff.reset
         report(progress, "type" => "status", "value" => "online", "queued" => connection.subscribed.queued)
@@ -75,10 +84,22 @@ module Pando
 
       def pump(connection, progress)
         until @stop
+          republish_if_requested
           drain_outgoing(connection)
           frame = connection.poll_frame(timeout: POLL_INTERVAL)
           report(progress, "type" => "frame", "frame" => frame) if frame
         end
+      end
+
+      # A failed republish must not tear down a healthy connection — the flag
+      # stays set and the next tick retries.
+      def republish_if_requested
+        return unless @republish
+
+        directory.publish(bundle.to_h, discoverable: @discoverable)
+        @republish = false
+      rescue DirectoryClient::Error, SystemCallError, SocketError, IOError
+        nil
       end
 
       def drain_outgoing(connection)

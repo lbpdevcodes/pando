@@ -4,6 +4,8 @@ require "securerandom"
 
 module Pando
   class ChatController < ApplicationController
+    include ContactRequestsUi
+
     focus_ring :sidebar, :composer
 
     key "page_up", :scroll_page_up, scope: :global
@@ -27,6 +29,7 @@ module Pando
         active: active_conversation,
         status: connection_status,
         add_contact: add_contact_open? ? add_contact_input : nil,
+        modal: current_modal,
         palette: command_palette
     end
 
@@ -187,12 +190,18 @@ module Pando
         conversations.find { |c| c.id == chat_state.active_conversation_id } || conversations.first
     end
 
+    # Each modal-owning concern contributes a spec here; the first open one wins.
+    def current_modal
+      contact_requests_modal
+    end
+
     def conversation_list
       ConversationList.new(
         conversations: conversations,
         cursor_index: chat_state.cursor_index,
         active_id: active_conversation&.id,
         focused: sidebar_focused?,
+        request_count: ContactRequest.inbox.count,
         theme: theme
       )
     end
@@ -240,6 +249,7 @@ module Pando
       chat_state.follow = transcript.at_bottom?
       composer_state[:value] = composer.value
       add_contact_state[:value] = add_contact_input.value if add_contact_open?
+      persist_contact_request_state
     end
 
     def composer_state
