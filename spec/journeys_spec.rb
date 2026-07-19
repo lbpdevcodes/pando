@@ -242,6 +242,20 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).not_to include("key has changed")
   end
 
+  it "retries failed messages from the palette" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    conversation = seed_conversation
+    failed = conversation.messages.create!(direction: "outgoing", body: "rejected once",
+      status: "failed", sent_at: Time.now.utc, content_id: "fail-1")
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"retry".chars, "enter", "ctrl+c")
+
+    expect(failed.reload.status).to eq("pending")
+    expect(plain(backend.frames.last)).to include("Retrying 1 message")
+  end
+
   it "quits through the command palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

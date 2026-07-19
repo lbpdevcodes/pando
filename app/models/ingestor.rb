@@ -17,6 +17,7 @@ module Pando
       case frame
       when Protocol::Frames::Message then ingest_message(frame)
       when Protocol::Frames::Receipt then apply_relay_receipt(frame)
+      when Protocol::Frames::Error then apply_send_error(frame)
       end
     end
 
@@ -119,6 +120,21 @@ module Pando
 
       message.update!(status: "sent") if message.status == "pending"
       [:receipt, message.conversation.key]
+    end
+
+    # queue_full and frame_too_large reference the rejected send (ref is the
+    # outbox's "<content_id>/<mailbox>" id) — mark that message failed so the UI
+    # shows the ✗ and offers retry. unauthorized/bad_frame are connection-scoped.
+    MESSAGE_ERROR_CODES = %w[queue_full frame_too_large].freeze
+
+    def apply_send_error(frame)
+      return nil unless MESSAGE_ERROR_CODES.include?(frame.code)
+
+      message = outgoing_message(frame.ref.to_s.split("/").first)
+      return nil unless message && message.status != "delivered"
+
+      message.update!(status: "failed")
+      [:failed, message.conversation.key]
     end
 
     # Receipts always concern our outgoing copy — the peer's incoming copy shares

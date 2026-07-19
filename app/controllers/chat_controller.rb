@@ -18,6 +18,7 @@ module Pando
 
     command "Add contact", :open_add_contact
     command "Copy my invite code", :show_my_invite
+    command "Retry failed messages", :retry_failed
 
     def show
       return navigate_to("/onboarding") unless Store.unlocked?
@@ -96,6 +97,15 @@ module Pando
       composer_state[:value] = ""
       @composer = nil
       chat_state.follow = true
+      show
+    end
+
+    def retry_failed
+      close_command_palette
+      count = Message.where(direction: "outgoing", status: "failed")
+        .update_all(status: "pending")
+      Redeliver.new(hub: hub).call if hub && connection_status == "online"
+      show_toast(count.zero? ? "No failed messages" : "Retrying #{count} message#{"s" if count != 1}")
       show
     end
 

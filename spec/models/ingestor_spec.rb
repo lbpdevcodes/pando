@@ -114,6 +114,46 @@ RSpec.describe Pando::Ingestor do
     expect(Pando::Message.count).to eq(0)
   end
 
+  describe "relay error frames" do
+    let!(:conversation) { Pando::Conversation.create!(key: conversation_key) }
+    let!(:outgoing) do
+      conversation.messages.create!(direction: "outgoing", body: "big", status: "pending",
+        sent_at: Time.now.utc, content_id: "err-1")
+    end
+
+    def error_frame(code:, ref: "err-1/mbox")
+      Pando::Protocol::Frames::Error.new(code: code, ref: ref, detail: nil)
+    end
+
+    it "marks the referenced message failed on queue_full" do
+      result = ingestor.ingest_frame(error_frame(code: "queue_full"))
+
+      expect(outgoing.reload.status).to eq("failed")
+      expect(result).to eq([:failed, conversation_key])
+    end
+
+    it "marks the referenced message failed on frame_too_large" do
+      ingestor.ingest_frame(error_frame(code: "frame_too_large"))
+
+      expect(outgoing.reload.status).to eq("failed")
+    end
+
+    it "never demotes a message that already reached delivered" do
+      outgoing.update!(status: "delivered")
+
+      result = ingestor.ingest_frame(error_frame(code: "queue_full"))
+
+      expect(outgoing.reload.status).to eq("delivered")
+      expect(result).to be_nil
+    end
+
+    it "ignores connection-scoped errors and unknown refs" do
+      expect(ingestor.ingest_frame(error_frame(code: "unauthorized", ref: nil))).to be_nil
+      expect(ingestor.ingest_frame(error_frame(code: "queue_full", ref: "nope/mbox"))).to be_nil
+      expect(outgoing.reload.status).to eq("pending")
+    end
+  end
+
   describe "TOFU key-change detection" do
     let(:peer_account) { Pando::Crypto::Account.generate }
     let(:peer_device) { Pando::Crypto::Device.generate }

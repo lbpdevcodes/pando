@@ -75,8 +75,14 @@ module Pando
       render_default_action
     end
 
+    # Every transition INTO online — first connect after boot or any reconnect —
+    # re-sends messages still pending. Rows persisted by a dead process and
+    # frames lost from the Hub's in-memory queue both surface here, because
+    # neither ever received the relay receipt that promotes pending to sent.
     def apply_status(payload)
+      went_online = payload["value"] == "online" && session[:connection_status] != "online"
       session[:connection_status] = payload["value"]
+      Redeliver.new(hub: hub).call if went_online
     end
 
     def ingest(frame)
@@ -88,6 +94,7 @@ module Pando
       when :contact_request then show_toast("New contact request — ctrl+p → Contact requests", kind: :info)
       when :contact_accepted then show_toast("Contact request accepted", kind: :info)
       when :key_changed then show_toast("A contact's key has changed — verify before trusting", kind: :error)
+      when :failed then show_toast("A message was rejected by the relay — ctrl+p → Retry failed messages", kind: :error)
       end
     end
   end
