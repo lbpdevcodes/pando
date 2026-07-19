@@ -8,6 +8,7 @@ module Pando
     include VerificationUi
     include RoomsUi
     include RelaysUi
+    include AttachmentsUi
 
     focus_ring :sidebar, :composer
 
@@ -104,7 +105,7 @@ module Pando
 
     def retry_failed
       close_command_palette
-      count = Message.where(direction: "outgoing", status: "failed")
+      count = Message.where(direction: "outgoing", status: "failed", kind: "text")
         .update_all(status: "pending")
       Redeliver.new(hub: hub).call if hub && connection_status == "online"
       show_toast(count.zero? ? "No failed messages" : "Retrying #{count} message#{"s" if count != 1}")
@@ -206,7 +207,8 @@ module Pando
 
     # Each modal-owning concern contributes a spec here; the first open one wins.
     def current_modal
-      contact_requests_modal || verification_modal || rooms_modal || relays_modal
+      contact_requests_modal || verification_modal || rooms_modal || relays_modal ||
+        attachments_modal
     end
 
     def conversation_list
@@ -221,12 +223,16 @@ module Pando
     end
 
     def transcript
-      @transcript ||= Transcript.new(
-        messages: active_conversation ? active_conversation.messages.chronological.to_a : [],
-        width: transcript_width, height: transcript_height,
-        offset: chat_state.transcript_offset, follow: chat_state.follow,
-        theme: theme
-      )
+      @transcript ||= begin
+        messages = active_conversation ? active_conversation.messages.chronological.to_a : []
+        Transcript.new(
+          messages: messages,
+          width: transcript_width, height: transcript_height,
+          offset: chat_state.transcript_offset, follow: chat_state.follow,
+          image_blocks: transcript_image_blocks(messages),
+          theme: theme
+        )
+      end
     end
 
     # The composer draft is per-conversation, so switching chats keeps each draft.
@@ -266,6 +272,7 @@ module Pando
       persist_contact_request_state
       persist_rooms_state
       persist_relays_state
+      persist_attachments_state
     end
 
     def composer_state

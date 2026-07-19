@@ -311,6 +311,58 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).to include("http://host:8787")
   end
 
+  it "attaches a file through the picker and stores it sealed" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    Dir.mktmpdir do |files_dir|
+      ENV["PANDO_ATTACH_ROOT"] = files_dir
+      File.binwrite(File.join(files_dir, "note.txt"), "attach me please")
+
+      backend = run_journey(*unlock_keys, "ctrl+p", *"attach file".chars, "enter",
+        "enter", "ctrl+c")
+
+      message = Pando::Message.find_by(kind: "attachment")
+      expect(message.body).to eq("note.txt")
+      attachment = message.attachment
+      expect(attachment.status).to eq("sending")
+      expect(Pando::Attachments::BlobStore.new.read(attachment.attachment_id))
+        .to eq("attach me please")
+      expect(plain(backend.frames.last)).to include("note.txt")
+    ensure
+      ENV.delete("PANDO_ATTACH_ROOT")
+    end
+  end
+
+  it "renders received attachments as file lines and saves them on demand" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    conversation = seed_conversation
+    message = conversation.messages.create!(direction: "incoming", kind: "attachment",
+      body: "photo.png", status: "delivered", sent_at: Time.now.utc, content_id: "att-m1")
+    Pando::Attachment.create!(message: message, attachment_id: "att-1",
+      name: "photo.png", mime: "image/png", size: 12, digest: "d", total_chunks: 1,
+      received_chunks: 1, status: "complete")
+    Pando::Attachments::BlobStore.new.write("att-1", "png-ish bytes")
+    Pando::Store.lock!
+
+    Dir.mktmpdir do |downloads|
+      ENV["PANDO_DOWNLOADS"] = downloads
+
+      backend = run_journey(*unlock_keys, "ctrl+p", *"save attachment".chars, "enter", "ctrl+c")
+
+      frame_text = backend.frames.map { |f| plain(f) }.join
+      expect(frame_text).to include("photo.png (12 B)")
+      saved = File.join(downloads, "photo.png")
+      expect(File.binread(saved)).to eq("png-ish bytes")
+      expect(plain(backend.frames.last)).to include("Saved to")
+    ensure
+      ENV.delete("PANDO_DOWNLOADS")
+    end
+  end
+
   it "retries failed messages from the palette" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

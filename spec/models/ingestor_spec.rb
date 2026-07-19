@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "tmpdir"
+
 RSpec.describe Pando::Ingestor do
   let(:hub) do
     Class.new do
@@ -187,6 +189,76 @@ RSpec.describe Pando::Ingestor do
 
       expect(result).to eq([:message, dm_key])
       expect(contact.reload.trust_level).to eq("unverified")
+    end
+  end
+
+  describe "attachments" do
+    around do |example|
+      Dir.mktmpdir do |dir|
+        ENV["PANDO_ROOT"] = dir
+        example.run
+      ensure
+        ENV.delete("PANDO_ROOT")
+      end
+    end
+
+    let(:attachment_id) { SecureRandom.uuid }
+    let(:bytes) { "tiny attachment payload" }
+    let(:digest) { [RbNaCl::Hash.blake2b(bytes, digest_size: 32)].pack("m0") }
+
+    def manifest_content
+      Pando::Protocol::Content.new(kind: "attachment-manifest", conversation: conversation_key,
+        id: "man-1",
+        body: {"attachment_id" => attachment_id, "name" => "note.txt", "mime" => "text/plain",
+               "size" => bytes.bytesize, "digest" => digest, "chunks" => 1,
+               "chunk_bytes" => Pando::Attachments::CHUNK_BYTES, "voice" => false,
+               "duration_s" => nil})
+    end
+
+    def chunk_content
+      Pando::Protocol::Content.new(kind: "attachment-chunk", conversation: conversation_key,
+        body: {"attachment_id" => attachment_id, "index" => 0, "total" => 1,
+               "data" => [bytes].pack("m0")})
+    end
+
+    it "assembles an attachment and sends the delivered receipt for the manifest" do
+      bundle = Pando::Crypto::DeviceBundle.issue(device: sender, account: sender_account)
+      Pando::Contact.create!(fingerprint: sender_account.fingerprint, name: "Alice",
+        bundle: JSON.generate(bundle.to_h))
+
+      ingestor.ingest_frame(message_frame(manifest_content, seq: 1))
+      result = ingestor.ingest_frame(message_frame(chunk_content, seq: 2))
+
+      expect(result).to eq([:attachment, conversation_key])
+      attachment = Pando::Attachment.sole
+      expect(attachment.status).to eq("complete")
+      expect(attachment.message.sender_fingerprint).to eq(sender_account.fingerprint)
+
+      receipts = hub.sent.map do |frame|
+        opened = Pando::Protocol::Envelope.from_h(frame.fetch(:envelope)).open(with: sender)
+        Pando::Protocol::Content.from_json(opened)
+      end.select { |c| c.kind == "receipt" }
+      expect(receipts.sole.body).to eq({"of" => "man-1", "status" => "delivered"})
+    end
+
+    it "drives send progress from att-prefixed relay receipts" do
+      conversation = Pando::Conversation.create!(key: conversation_key)
+      message = conversation.messages.create!(direction: "outgoing", kind: "attachment",
+        body: "big.bin", status: "pending", sent_at: Time.now.utc, content_id: "man-2")
+      attachment = Pando::Attachment.create!(message: message, attachment_id: attachment_id,
+        name: "big.bin", size: 10, digest: "d", total_chunks: 2, status: "sending")
+
+      ingestor.ingest_frame(Pando::Protocol::Frames::Receipt.new(
+        id: "att:#{attachment_id}:0/mbox", status: "queued", expires_at: nil
+      ))
+      expect(attachment.reload.acked_chunks).to eq(1)
+      expect(attachment.status).to eq("sending")
+
+      ingestor.ingest_frame(Pando::Protocol::Frames::Receipt.new(
+        id: "att:#{attachment_id}:1/mbox", status: "queued", expires_at: nil
+      ))
+      expect(attachment.reload.acked_chunks).to eq(2)
+      expect(attachment.status).to eq("sent")
     end
   end
 

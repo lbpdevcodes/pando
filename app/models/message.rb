@@ -6,6 +6,7 @@ module Pando
     DIRECTIONS = %w[incoming outgoing].freeze
 
     belongs_to :conversation
+    has_one :attachment, dependent: :destroy
 
     attribute :body, :pando_encrypted
 

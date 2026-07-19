@@ -71,6 +71,15 @@ RSpec.describe Pando::Redeliver do
     expect(Pando::Message.find_by(content_id: "void-1").status).to eq("pending")
   end
 
+  it "never re-sends attachment-kind messages as text" do
+    conversation.messages.create!(direction: "outgoing", kind: "attachment", body: "photo.png",
+      status: "pending", sent_at: Time.now.utc, content_id: "att-msg-1")
+
+    described_class.new(hub: hub).call
+
+    expect(hub.sent).to be_empty
+  end
+
   it "re-sends oldest first so ordering survives a reconnect" do
     message(status: "pending", body: "first", content_id: "a")
       .update!(sent_at: Time.now.utc - 60)

@@ -44,6 +44,8 @@ module Pando
       when "contact-accept" then contact_exchange.apply_accept(content, envelope)
       when "room-create", "room-update" then apply_room_snapshot(content, envelope)
       when "room-history" then apply_room_history(content, envelope)
+      when "attachment-manifest" then ingest_manifest(content, envelope)
+      when "attachment-chunk" then ingest_chunk(content)
       end
     end
 
@@ -142,11 +144,55 @@ module Pando
     # The relay's receipt means "accepted" (forwarded or queued) — promote pending
     # to sent, but never walk back an end-to-end delivered.
     def apply_relay_receipt(frame)
-      message = outgoing_message(frame.id.to_s.split("/").first)
+      reference = frame.id.to_s.split("/").first
+      return apply_chunk_receipt(reference) if reference.start_with?("att:")
+
+      message = outgoing_message(reference)
       return nil unless message
 
       message.update!(status: "sent") if message.status == "pending"
       [:receipt, message.conversation.key]
+    end
+
+    def ingest_manifest(content, envelope)
+      contact = Contact.for_sender_key(envelope.sender_key)
+      complete_attachment(Attachments::Assembler.new
+        .manifest(content, sender_fingerprint: contact&.fingerprint))
+    end
+
+    def ingest_chunk(content)
+      complete_attachment(Attachments::Assembler.new.chunk(content))
+    end
+
+    # A finished assembly earns the delivered receipt for its MANIFEST content
+    # id — the sender's attachment message flips to delivered only once the
+    # whole file verified.
+    def complete_attachment(result)
+      kind, message = result
+      return result unless kind == :attachment_complete
+
+      contact = Contact.find_by(fingerprint: message.sender_fingerprint)
+      if contact
+        receipt = Protocol::Content.new(kind: "receipt", conversation: message.conversation.key,
+          body: {"of" => message.content_id, "status" => "delivered"})
+        Client::Outbox.new(connection: hub, device: hub.device)
+          .deliver(receipt, to_bundles: [contact.device_bundle])
+      end
+      [:attachment, message.conversation.key]
+    end
+
+    # Chunk relay receipts ("att:<attachment_id>:<index>/<mailbox>") drive send
+    # progress. Fan-out to several devices receipts each chunk more than once —
+    # the count is an approximation capped at total, good enough for a progress
+    # label.
+    def apply_chunk_receipt(reference)
+      attachment = Attachment.outgoing_for(reference.split(":")[1])
+      return nil unless attachment
+
+      acked = [attachment.acked_chunks + 1, attachment.total_chunks].min
+      attachment.update!(acked_chunks: acked,
+        status: (acked == attachment.total_chunks) ? "sent" : attachment.status)
+      [:attachment, attachment.message.conversation.key]
     end
 
     # queue_full and frame_too_large reference the rejected send (ref is the

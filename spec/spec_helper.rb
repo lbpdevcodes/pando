@@ -18,6 +18,10 @@ TEST_DATA_KEY = RbNaCl::Hash.sha256("pando test data key")
 RSpec.configure do |config|
   config.before(:each) { Pando::Store.data_key = TEST_DATA_KEY }
 
+  # Never let the test host's terminal (e.g. running specs inside Ghostty)
+  # enable real graphics — specs that want Kitty inject their own Terminal.
+  config.before(:each) { Pando::Graphics.terminal = Charming::Image::Terminal.new(env: {}) }
+
   # Roll back database writes after each example so tests stay isolated.
   config.around(:each) do |example|
     ActiveRecord::Base.transaction(requires_new: true) do
