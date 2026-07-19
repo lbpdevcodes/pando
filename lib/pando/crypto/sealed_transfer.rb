@@ -13,7 +13,7 @@ module Pando
       end
 
       def open(sealed, with:)
-        RbNaCl::SealedBox.from_private_key(with.encryption_key_for_opening).decrypt(sealed)
+        RbNaCl::SealedBox.from_private_key(with.private_encryption_key).decrypt(sealed)
       end
     end
   end

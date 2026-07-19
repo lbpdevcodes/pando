@@ -10,7 +10,7 @@ end
 
 loader = Zeitwerk::Loader.new
 loader.tag = "pando"
-loader.inflector.inflect("version" => "VERSION")
+loader.inflector.inflect("version" => "VERSION", "cli" => "CLI")
 loader.push_dir(File.expand_path("pando", __dir__), namespace: Pando)
 loader.push_dir(File.expand_path("../app/models", __dir__), namespace: Pando)
 loader.push_dir(File.expand_path("../app/state", __dir__), namespace: Pando)

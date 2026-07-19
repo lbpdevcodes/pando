@@ -1,0 +1,99 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Demonstrates the Phase 2 stack end-to-end with a real relay process and two
+# client processes on localhost: live delivery, offline queueing with drain on
+# reconnect, and rejection of tampered ciphertext.
+
+require "bundler/setup"
+require "pando"
+require "json"
+require "socket"
+require "tmpdir"
+
+def step(label) = puts("\n== #{label}")
+
+Dir.mktmpdir do |dir|
+  db = File.join(dir, "relay.db")
+  port = TCPServer.open("127.0.0.1", 0) { |server| server.addr[1] }
+  url = "ws://127.0.0.1:#{port}/v1/ws"
+
+  step "boot relay (separate process, port #{port})"
+  relay_pid = spawn(RbConfig.ruby, File.expand_path("../exe/pando-relay", __dir__),
+    "--host", "127.0.0.1", "--port", port.to_s, "--db", db)
+  30.times do
+    TCPSocket.new("127.0.0.1", port).close
+    break
+  rescue Errno::ECONNREFUSED
+    sleep 0.1
+  end
+
+  identities = %w[alice bob].to_h do |name|
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    Pando::Relay::Directory.new(db).publish(bundle.to_h)
+    puts "#{name}: fingerprint=#{account.fingerprint} mailbox=#{device.mailbox[0, 12]}…"
+    [name, {device: device, bundle: bundle}]
+  end
+  alice = identities.fetch("alice")
+  bob = identities.fetch("bob")
+
+  # Bob runs in his own OS process, proving nothing is shared but the wire.
+  bob_script = <<~RUBY
+    require "bundler/setup"
+    require "pando"
+    device = Pando::Crypto::Device.new(
+      signing_key: RbNaCl::SigningKey.new(STDIN.read(32)),
+      encryption_key: RbNaCl::PrivateKey.new(STDIN.read(32)),
+      mailbox: ARGV[1]
+    )
+    connection = Pando::Client::Connection.open(ARGV[0], device: device)
+    inbox = Pando::Client::Inbox.new(connection: connection, device: device)
+    puts "subscribed queued=\#{connection.subscribed.queued}"
+    frame = connection.next_frame(timeout: 5)
+    received = inbox.receive(frame)
+    puts "received: \#{received.content.body.inspect} from \#{received.from[0, 12]}…"
+  RUBY
+
+  run_bob = lambda do
+    IO.popen([RbConfig.ruby, "-e", bob_script, url, bob[:device].mailbox],
+      "r+", chdir: File.expand_path("..", __dir__)) do |io|
+      io.write(bob[:device].send(:signing_key).to_bytes)
+      io.write(bob[:device].private_encryption_key.to_bytes)
+      io.close_write
+      io.read.each_line { |line| puts "  [bob] #{line}" }
+    end
+  end
+
+  step "live delivery: bob online, alice sends"
+  bob_thread = Thread.new { run_bob.call }
+  sleep 1.2 # let bob subscribe
+  alice_conn = Pando::Client::Connection.open(url, device: alice[:device])
+  outbox = Pando::Client::Outbox.new(connection: alice_conn, device: alice[:device])
+  outbox.deliver(Pando::Protocol::Content.text("hello from another process!", conversation: "dm:demo"),
+    to_bundles: [bob[:bundle]])
+  puts "  [alice] receipt: #{alice_conn.next_frame.status}"
+  bob_thread.join
+
+  step "offline queueing: bob away, alice sends, bob reconnects"
+  outbox.deliver(Pando::Protocol::Content.text("catch up when you're back", conversation: "dm:demo"),
+    to_bundles: [bob[:bundle]])
+  puts "  [alice] receipt: #{alice_conn.next_frame.status}"
+  run_bob.call
+
+  step "tamper rejection: forged ciphertext must not decrypt"
+  envelope = Pando::Protocol::Envelope.seal("secret", from: alice[:device], to: bob[:bundle].encryption_public_key)
+  forged = envelope.to_h.merge("c" => ["forged bytes go here"].pack("m0"))
+  begin
+    Pando::Protocol::Envelope.from_h(forged).open(with: bob[:device])
+    abort "BUG: tampered envelope decrypted!"
+  rescue RbNaCl::CryptoError => error
+    puts "  rejected: #{error.class}"
+  end
+
+  alice_conn.close
+  Process.kill("TERM", relay_pid)
+  Process.wait(relay_pid)
+  puts "\nAll demo scenarios passed."
+end

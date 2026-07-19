@@ -21,6 +21,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "websocket-driver", "~> 0.8"
   spec.add_dependency "rqrcode", "~> 3.0"
   spec.add_dependency "chunky_png", "~> 1.4"
-  spec.add_dependency "falcon", "~> 0.52"
   spec.add_dependency "async-websocket", "~> 0.30"
 end

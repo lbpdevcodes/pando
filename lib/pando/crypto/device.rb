@@ -36,7 +36,7 @@ module Pando
         signing_key.sign(message)
       end
 
-      def encryption_key_for_opening
+      def private_encryption_key
         encryption_key
       end
 
