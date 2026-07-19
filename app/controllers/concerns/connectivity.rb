@@ -32,6 +32,21 @@ module Pando
       @my_fingerprint ||= Crypto::Identity.account_from(session[:identity]).fingerprint
     end
 
+    # Each Hub report is a JSON-safe payload: a status change or an inbound
+    # frame. PUBLIC on purpose: the runtime dispatches bound actions with
+    # public_send, so every on_task_progress/on_task/timer/key action must be
+    # public (spec/controllers/action_visibility_spec.rb enforces this).
+    def handle_connection_event
+      payload = event.message
+      return show if payload.nil?
+
+      case payload["type"]
+      when "status" then apply_status(payload)
+      when "frame" then ingest(payload["frame"])
+      end
+      render_default_action
+    end
+
     private
 
     def ensure_connected
@@ -94,18 +109,6 @@ module Pando
 
       url = ENV["PANDO_RELAY"]
       RelayConfig.create!(name: URI(url).host, url: url, active: true)
-    end
-
-    # Each Hub report is a JSON-safe payload: a status change or an inbound frame.
-    def handle_connection_event
-      payload = event.message
-      return show if payload.nil?
-
-      case payload["type"]
-      when "status" then apply_status(payload)
-      when "frame" then ingest(payload["frame"])
-      end
-      render_default_action
     end
 
     # Every transition INTO online — first connect after boot or any reconnect —
