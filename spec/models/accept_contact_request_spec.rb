@@ -55,4 +55,21 @@ RSpec.describe Pando::AcceptContactRequest do
     expect(request.reload.status).to eq("accepted")
     expect(Pando::Contact.find_by(fingerprint: peer_account.fingerprint)).not_to be_nil
   end
+
+  it "flushes messages stuck pending for the requester" do
+    key = Pando::Protocol::Content.dm_conversation(my_account.fingerprint, peer_account.fingerprint)
+    conversation = Pando::Conversation.create!(key: key, last_activity_at: Time.now.utc)
+    conversation.messages.create!(direction: "outgoing", body: "held back",
+      sent_at: Time.now.utc, content_id: "stuck-1")
+
+    accept
+
+    delivered = hub.sent.map do |frame|
+      opened = Pando::Protocol::Envelope.from_h(frame.fetch(:envelope)).open(with: peer_device)
+      Pando::Protocol::Content.from_json(opened)
+    end
+    text = delivered.find { |content| content.kind == "text" }
+    expect(text.body).to eq("held back")
+    expect(text.id).to eq("stuck-1")
+  end
 end

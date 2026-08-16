@@ -86,7 +86,7 @@ module Pando
     end
 
     def contact_exchange
-      ContactExchange.new(my_fingerprint: hub.account.fingerprint)
+      ContactExchange.new(my_fingerprint: hub.account.fingerprint, hub: hub)
     end
 
     def apply_room_snapshot(content, envelope)

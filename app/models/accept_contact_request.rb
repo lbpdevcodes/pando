@@ -21,12 +21,20 @@ module Pando
       AddContact.new(my_fingerprint: my_fingerprint).call(card)
       send_accept(request) if hub
       request.update!(status: "accepted")
+      flush_pending
       request
     end
 
     private
 
     attr_reader :my_fingerprint, :my_name, :hub
+
+    # The requester may have messages stuck pending from before they knew our
+    # bundle — or we from before we knew theirs. Now that the contact exists
+    # both ways, the flush path can resolve recipients.
+    def flush_pending
+      Redeliver.new(hub: hub).call if hub
+    end
 
     def send_accept(request)
       content = Protocol::Content.new(kind: "contact-accept",

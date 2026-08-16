@@ -50,9 +50,10 @@ module Pando
     def invite_file_picker_selected(path)
       close_invite_file_picker
       invite = Invite.decode(File.read(path, 4096).to_s.strip)
-      AddContact.new(my_fingerprint: my_fingerprint).call(invite)
+      AddContactFromInvite.new(my_fingerprint: my_fingerprint, my_name: my_display_name,
+        hub: hub).call(invite)
       reload_conversations
-      show_toast("Added #{invite.name}")
+      show_toast(add_contact_toast(invite))
       show
     rescue Invite::Malformed
       show_toast("That file isn't an invite", kind: :warn)

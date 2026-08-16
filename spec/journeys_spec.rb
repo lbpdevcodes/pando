@@ -164,6 +164,22 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).to include("Added Zoe")
   end
 
+  it "tells the user the contact request sends on reconnect when adding offline" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    Pando::Store.lock!
+
+    account = Pando::Crypto::Account.generate
+    device = Pando::Crypto::Device.generate
+    bundle = Pando::Crypto::DeviceBundle.issue(device: device, account: account)
+    code = Pando::Invite.encode(bundle: bundle.to_h, name: "Zoe")
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"add contact".chars, "enter", *code.chars, "enter", "ctrl+c")
+
+    expect(plain(backend.frames.last)).to include("your contact request sends when you reconnect")
+    expect(Pando::ContactRequest.count).to eq(0)
+  end
+
   def seed_contact_request(name: "Zoe")
     account = Pando::Crypto::Account.generate
     device = Pando::Crypto::Device.generate

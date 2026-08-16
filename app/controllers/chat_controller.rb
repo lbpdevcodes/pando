@@ -66,9 +66,10 @@ module Pando
 
     def add_contact_input_submitted(value)
       invite = Invite.decode(value.strip)
-      AddContact.new(my_fingerprint: my_fingerprint).call(invite)
+      AddContactFromInvite.new(my_fingerprint: my_fingerprint, my_name: my_display_name,
+        hub: hub).call(invite)
       close_add_contact
-      show_toast("Added #{invite.name}")
+      show_toast(add_contact_toast(invite))
       reload_conversations
       show
     rescue Invite::Malformed
@@ -332,6 +333,14 @@ module Pando
 
     def my_display_name
       "me"
+    end
+
+    # The invite add notifies the invitee with a contact request; say what
+    # happens next, keyed on whether the relay is reachable right now.
+    def add_contact_toast(invite)
+      return "Added #{invite.name} — they can reply once they accept your contact request" if connection_status == "online"
+
+      "Added #{invite.name} — your contact request sends when you reconnect"
     end
 
     def persist_component_state
