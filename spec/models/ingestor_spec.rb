@@ -539,6 +539,25 @@ RSpec.describe Pando::Ingestor do
       expect(result).to eq([:contact_accepted, sender_account.fingerprint])
     end
 
+    it "flushes messages stuck pending for the newly accepted contact" do
+      Pando::ContactRequest.create!(fingerprint: sender_account.fingerprint, direction: "outgoing",
+        status: "pending", bundle: JSON.generate(sender_bundle.to_h), content_id: "out-req")
+      key = Pando::Protocol::Content.dm_conversation(hub.account.fingerprint, sender_account.fingerprint)
+      conversation = Pando::Conversation.create!(key: key, last_activity_at: Time.now.utc)
+      conversation.messages.create!(direction: "outgoing", body: "held back",
+        sent_at: Time.now.utc, content_id: "stuck-1")
+
+      ingestor.ingest_frame(message_frame(accept_content))
+
+      delivered = hub.sent.map do |frame|
+        opened = Pando::Protocol::Envelope.from_h(frame.fetch(:envelope)).open(with: sender)
+        Pando::Protocol::Content.from_json(opened)
+      end
+      text = delivered.find { |content| content.kind == "text" }
+      expect(text.body).to eq("held back")
+      expect(text.id).to eq("stuck-1")
+    end
+
     it "drops a contact-accept with no matching outgoing request" do
       result = ingestor.ingest_frame(message_frame(accept_content))
 

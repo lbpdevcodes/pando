@@ -66,9 +66,10 @@ PANDO_RELAY=http://your-relay:8787 bundle exec pando
    after that manage relays in-app (`ctrl+p` → *Add relay* / *Switch relay*).
 3. **Share your invite** — `ctrl+p` → *Copy my invite code* (text) or *Show my
    invite QR* (scannable). Your peer uses *Add contact* (paste) or *Load
-   invite from file*. Or skip codes entirely: toggle *Toggle discoverability*
-   and peers can *Find contact by fingerprint*, which lands in your *Contact
-   requests* inbox to accept or decline.
+   invite from file* — either sends you a contact request, and once you accept
+   it in *Contact requests*, you can both reply. Or skip codes entirely:
+   toggle *Toggle discoverability* and peers can *Find contact by fingerprint*,
+   which lands in the same inbox.
 4. **Talk** — `tab` to the composer, `enter` sends. `ctrl+p` for everything
    else: rooms, attachments (*Attach file*), voice notes (`ctrl+r`), message
    timers, contact verification. `?` shows the key cheat-sheet.

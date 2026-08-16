@@ -10,8 +10,9 @@ module Pando
   # and dropped silently. Declines are local-only by design — a requester can't
   # probe whether an account exists or declined.
   class ContactExchange
-    def initialize(my_fingerprint:)
+    def initialize(my_fingerprint:, hub: nil)
       @my_fingerprint = my_fingerprint
+      @hub = hub
     end
 
     def store_request(content, envelope)
@@ -32,12 +33,20 @@ module Pando
 
       AddContact.new(my_fingerprint: my_fingerprint).call(card)
       request.update!(status: "accepted")
+      flush_pending
       [:contact_accepted, card.fingerprint]
     end
 
     private
 
-    attr_reader :my_fingerprint
+    attr_reader :my_fingerprint, :hub
+
+    # Our messages to this peer may be stuck pending from before their bundle
+    # was known (a one-sided invite add); the accept completes the contact, so
+    # the flush path can finally resolve recipients.
+    def flush_pending
+      Redeliver.new(hub: hub).call if hub
+    end
 
     def verified_card(content, envelope)
       card = ContactCard.new(name: content.body["name"], bundle: content.body["bundle"])
