@@ -53,8 +53,11 @@ module Pando
       return unless can_connect?
 
       session[:connection_started] = true
-      session[:hub] = build_hub
-      run_task(:connection) { |progress| session[:hub].run(progress) }
+      # The block runs on the task thread, where touching `session` raises
+      # CrossThreadAccess — the hub travels in a closure instead.
+      hub = build_hub
+      session[:hub] = hub
+      run_task(:connection) { |ctx| hub.run(ctx) }
     end
 
     # The Hub is an endless loop, so it can only live on a background thread — under

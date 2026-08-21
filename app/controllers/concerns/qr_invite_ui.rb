@@ -13,20 +13,22 @@ module Pando
     def self.included(base)
       base.command "Show my invite QR", :open_invite_qr
       base.command "Load invite from file", :open_invite_file_picker
+
+      base.slot(:invite_qr_card) { QrInviteCard.new(source: nil, code: nil, theme: theme) }
+      base.slot(:invite_file_picker) { AttachPicker.new(root: attach_root, height: 12, theme: theme) }
+
+      base.on_cancel :invite_qr_card, :invite_qr_card_cancelled
+      base.on_select :invite_file_picker, :invite_file_picker_selected
+      base.on_cancel :invite_file_picker, :invite_file_picker_cancelled
     end
 
     def open_invite_qr
-      close_command_palette
+      dismiss_command_palette
       session[:invite_qr_open] = true
       build_qr_source
+      invite_qr_card.configure(source: session[:qr_source], code: my_invite_code)
       focus.push_scope([:invite_qr_card], origin: :modal)
       show
-    end
-
-    # Focus slot: the QR display; any key closes it.
-    def invite_qr_card
-      @invite_qr_card ||= QrInviteCard.new(source: session[:qr_source],
-        code: my_invite_code, theme: theme)
     end
 
     def invite_qr_card_cancelled
@@ -35,16 +37,10 @@ module Pando
     end
 
     def open_invite_file_picker
-      close_command_palette
+      dismiss_command_palette
       session[:invite_file_open] = true
       focus.push_scope([:invite_file_picker], origin: :modal)
       show
-    end
-
-    # Focus slot: the file browser for a saved invite.
-    def invite_file_picker
-      @invite_file_picker ||= AttachPicker.new(root: attach_root,
-        current_dir: session[:attach_dir], height: 12, theme: theme)
     end
 
     def invite_file_picker_selected(path)
@@ -90,14 +86,13 @@ module Pando
       if (source = session.delete(:qr_source))
         Charming::Escape.register(source.release)
       end
-      @invite_qr_card = nil
       focus.pop_scope
     end
 
+    # The picker is memoized for the screen's lifetime, so it reopens where the
+    # user left off — no directory write-back needed.
     def close_invite_file_picker
-      session[:attach_dir] = invite_file_picker.current_dir
       session[:invite_file_open] = false
-      @invite_file_picker = nil
       focus.pop_scope
     end
 

@@ -9,20 +9,21 @@ module Pando
     def self.included(base)
       base.command "New room", :open_new_room
       base.command "Invite to room", :open_room_invite
+
+      base.slot(:new_room_input) { TextInput.new(width: 32, placeholder: "room name") }
+      base.slot(:room_invite_input) { TextInput.new(width: 32, placeholder: "contact name or fingerprint") }
+
+      base.on_submit :new_room_input, :new_room_input_submitted
+      base.on_cancel :new_room_input, :new_room_input_cancelled
+      base.on_submit :room_invite_input, :room_invite_input_submitted
+      base.on_cancel :room_invite_input, :room_invite_input_cancelled
     end
 
     def open_new_room
-      close_command_palette
+      dismiss_command_palette
       session[:new_room_open] = true
       focus.push_scope([:new_room_input], origin: :modal)
       show
-    end
-
-    # Focus slot: the room-name entry inside the new-room modal.
-    def new_room_input
-      @new_room_input ||= Charming::Components::TextInput.new(
-        value: new_room_state[:value], width: 32, placeholder: "room name"
-      )
     end
 
     def new_room_input_submitted(value)
@@ -43,20 +44,13 @@ module Pando
     end
 
     def open_room_invite
-      close_command_palette
+      dismiss_command_palette
       return not_a_room unless active_conversation&.room?
       return offline_for_invite unless hub
 
       session[:room_invite_open] = true
       focus.push_scope([:room_invite_input], origin: :modal)
       show
-    end
-
-    # Focus slot: the contact entry inside the invite modal.
-    def room_invite_input
-      @room_invite_input ||= Charming::Components::TextInput.new(
-        value: room_invite_state[:value], width: 32, placeholder: "contact name or fingerprint"
-      )
     end
 
     def room_invite_input_submitted(value)
@@ -100,8 +94,7 @@ module Pando
 
     def unknown_invitee
       show_toast("No contact matches that name or fingerprint", kind: :warn)
-      room_invite_state[:value] = ""
-      @room_invite_input = nil
+      room_invite_input.clear!
       show
     end
 
@@ -121,31 +114,18 @@ module Pando
        help: "enter invite · esc cancel"}
     end
 
+    # Clears the memoized input so the next open starts empty.
     def close_new_room
       session[:new_room_open] = false
-      new_room_state[:value] = ""
-      @new_room_input = nil
+      new_room_input.clear!
       focus.pop_scope
     end
 
+    # Clears the memoized input so the next open starts empty.
     def close_room_invite
       session[:room_invite_open] = false
-      room_invite_state[:value] = ""
-      @room_invite_input = nil
+      room_invite_input.clear!
       focus.pop_scope
-    end
-
-    def persist_rooms_state
-      new_room_state[:value] = new_room_input.value if session[:new_room_open]
-      room_invite_state[:value] = room_invite_input.value if session[:room_invite_open]
-    end
-
-    def new_room_state
-      component_state(:new_room, value: "")
-    end
-
-    def room_invite_state
-      component_state(:room_invite, value: "")
     end
   end
 end

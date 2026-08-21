@@ -10,20 +10,24 @@ module Pando
     def self.included(base)
       base.command "Add relay", :open_add_relay
       base.command "Switch relay", :open_relay_list
+
+      base.slot(:relay_url_input) { TextInput.new(width: 40, placeholder: "http://host:8787") }
+      base.slot(:relay_token_input) { TextInput.new(width: 40, placeholder: "access token — enter to skip") }
+      base.slot(:relay_list) { RelayList.new(relays: [], theme: theme) }
+
+      base.on_submit :relay_url_input, :relay_url_input_submitted
+      base.on_cancel :relay_url_input, :relay_url_input_cancelled
+      base.on_submit :relay_token_input, :relay_token_input_submitted
+      base.on_cancel :relay_token_input, :relay_token_input_cancelled
+      base.on_select :relay_list, :relay_list_selected
+      base.on_cancel :relay_list, :relay_list_cancelled
     end
 
     def open_add_relay
-      close_command_palette
+      dismiss_command_palette
       session[:add_relay_open] = true
       focus.push_scope([:relay_url_input], origin: :modal)
       show
-    end
-
-    # Focus slot: step one of the add-relay modal — the URL.
-    def relay_url_input
-      @relay_url_input ||= Charming::Components::TextInput.new(
-        value: relay_url_state[:value], width: 40, placeholder: "http://host:8787"
-      )
     end
 
     def relay_url_input_submitted(value)
@@ -39,13 +43,6 @@ module Pando
     def relay_url_input_cancelled
       close_add_relay
       show
-    end
-
-    # Focus slot: step two — the optional token.
-    def relay_token_input
-      @relay_token_input ||= Charming::Components::TextInput.new(
-        value: relay_token_state[:value], width: 40, placeholder: "access token — enter to skip"
-      )
     end
 
     def relay_token_input_submitted(value)
@@ -67,16 +64,11 @@ module Pando
     end
 
     def open_relay_list
-      close_command_palette
+      dismiss_command_palette
+      relay_list.items = RelayConfig.order(:created_at).to_a
       session[:relay_list_open] = true
       focus.push_scope([:relay_list], origin: :modal)
       show
-    end
-
-    # Focus slot: the saved-relay picker.
-    def relay_list
-      @relay_list ||= RelayList.new(relays: RelayConfig.order(:created_at).to_a,
-        selected_index: relay_list_state[:index], theme: theme)
     end
 
     def relay_list_selected(relay)
@@ -107,8 +99,7 @@ module Pando
 
     def reject_relay_url
       show_toast("Enter a relay URL like http://host:8787", kind: :warn)
-      relay_url_state[:value] = ""
-      @relay_url_input = nil
+      relay_url_input.clear!
       show
     end
 
@@ -133,39 +124,18 @@ module Pando
       {title: "Switch relay", content: relay_list, help: "enter switch · esc close"}
     end
 
+    # Clears the memoized inputs so the next open starts empty.
     def close_add_relay
       session[:add_relay_open] = false
       session.delete(:new_relay_url)
-      relay_url_state[:value] = ""
-      relay_token_state[:value] = ""
-      @relay_url_input = nil
-      @relay_token_input = nil
+      relay_url_input.clear!
+      relay_token_input.clear!
       focus.pop_scope
     end
 
     def close_relay_list
       session[:relay_list_open] = false
-      relay_list_state[:index] = 0
-      @relay_list = nil
       focus.pop_scope
-    end
-
-    def persist_relays_state
-      relay_url_state[:value] = relay_url_input.value if session[:add_relay_open] && !session[:new_relay_url]
-      relay_token_state[:value] = relay_token_input.value if session[:add_relay_open] && session[:new_relay_url]
-      relay_list_state[:index] = relay_list.selected_index if session[:relay_list_open]
-    end
-
-    def relay_url_state
-      component_state(:relay_url, value: "")
-    end
-
-    def relay_token_state
-      component_state(:relay_token, value: "")
-    end
-
-    def relay_list_state
-      component_state(:relay_list, index: 0)
     end
   end
 end

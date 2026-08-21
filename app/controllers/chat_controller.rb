@@ -27,14 +27,29 @@ module Pando
     command "Retry failed messages", :retry_failed
     command "Message timer", :cycle_message_ttl
 
+    # The controller outlives one dispatch now, so data memos must be expired
+    # per action: inbound frames and timer sweeps mutate rows between renders.
+    before_action :expire_data_memos
+
+    # Focus slot: the message composer. Enter submits, shift+enter inserts a newline.
+    slot(:composer) { TextArea.new(height: 3, width: transcript_width, enter_newline: false, placeholder: composer_placeholder) }
+
+    # Focus slot: the invite-code entry inside the add-contact modal.
+    slot(:add_contact_input) { TextInput.new(width: 52, placeholder: "paste an invite code") }
+    on_submit :add_contact_input, :add_contact_input_submitted
+    on_cancel :add_contact_input, :add_contact_input_cancelled
+
     # Self-destruct presets the timer command cycles through, in seconds.
     TTL_PRESETS = [0, 5 * 60, 60 * 60, 24 * 60 * 60].freeze
     TTL_LABELS = {0 => "off", 300 => "5 minutes", 3600 => "1 hour", 86_400 => "24 hours"}.freeze
 
     def show
-      return navigate_to("/onboarding") unless Store.unlocked?
+      return navigate :onboarding unless Store.unlocked?
 
-      persist_component_state
+      composer.width = transcript_width
+      composer.placeholder = composer_placeholder
+      transcript = build_transcript
+      persist_view_state(transcript)
       clear_active_unread
       render :show,
         sidebar: conversation_list,
@@ -51,17 +66,10 @@ module Pando
     end
 
     def open_add_contact
-      close_command_palette
+      dismiss_command_palette
       session[:add_contact_open] = true
       focus.push_scope([:add_contact_input], origin: :modal)
       show
-    end
-
-    # Focus slot: the invite-code entry inside the add-contact modal.
-    def add_contact_input
-      @add_contact_input ||= Charming::Components::TextInput.new(
-        value: add_contact_state[:value], width: 52, placeholder: "paste an invite code"
-      )
     end
 
     def add_contact_input_submitted(value)
@@ -74,8 +82,7 @@ module Pando
       show
     rescue Invite::Malformed
       show_toast("That isn't a valid invite code", kind: :warn)
-      add_contact_state[:value] = ""
-      @add_contact_input = nil
+      add_contact_input.clear!
       show
     end
 
@@ -85,7 +92,7 @@ module Pando
     end
 
     def show_my_invite
-      close_command_palette
+      dismiss_command_palette
       code = hub ? hub.invite_code(name: my_display_name) : "(offline — reconnect to generate)"
       show_toast("Your invite code copied to the transcript")
       Conversation.find_or_create_by!(key: "self:notes") { |c| c.title = "My invite code" }
@@ -95,14 +102,6 @@ module Pando
       show
     end
 
-    # Focus slot: the message composer. Enter submits, shift+enter inserts a newline.
-    def composer
-      @composer ||= Charming::Components::TextArea.new(
-        value: composer_state[:value], height: 3, width: transcript_width,
-        enter_newline: false, placeholder: composer_placeholder
-      )
-    end
-
     def send_message
       conversation = active_conversation
       text = composer.value
@@ -110,14 +109,14 @@ module Pando
       return show if conversation.nil? || text.strip.empty?
 
       append_outgoing(conversation, text)
-      composer_state[:value] = ""
-      @composer = nil
+      composer.clear!
+      @last_composer_value = ""
       chat_state.follow = true
       show
     end
 
     def cycle_message_ttl
-      close_command_palette
+      dismiss_command_palette
       conversation = active_conversation
       return show_no_conversation_for_ttl unless conversation
 
@@ -128,7 +127,7 @@ module Pando
     end
 
     def retry_failed
-      close_command_palette
+      dismiss_command_palette
       count = Message.where(direction: "outgoing", status: "failed", kind: "text")
         .update_all(status: "pending")
       Redeliver.new(hub: hub).call if hub && connection_status == "online"
@@ -182,7 +181,11 @@ module Pando
     def activate_cursor_conversation
       conversation = conversations[chat_state.cursor_index]
       if conversation
+        composer_drafts[composer_key] = composer.value
         chat_state.active_conversation_id = conversation.id
+        @active_conversation = nil
+        composer.value = composer_drafts.fetch(composer_key, "")
+        @last_composer_value = composer.value
         reset_transcript
         focus_content
       else
@@ -193,7 +196,6 @@ module Pando
     def reset_transcript
       chat_state.transcript_offset = 0
       chat_state.follow = true
-      @transcript = nil
     end
 
     def append_outgoing(conversation, text)
@@ -247,6 +249,15 @@ module Pando
       @conversations ||= Conversation.recent_first.to_a
     end
 
+    # before_action hook: data reads re-query on the next access. Hooks run
+    # before key/timer/task actions; component-result actions skip hooks but
+    # reload explicitly after their own mutations.
+    def expire_data_memos
+      @conversations = nil
+      @active_conversation = nil
+      @pending_requests = nil
+    end
+
     def active_conversation
       @active_conversation ||=
         conversations.find { |c| c.id == chat_state.active_conversation_id } || conversations.first
@@ -269,22 +280,28 @@ module Pando
       )
     end
 
-    def transcript
-      @transcript ||= begin
-        messages = active_conversation ? active_conversation.messages.unexpired.chronological.to_a : []
-        Transcript.new(
-          messages: messages,
-          width: transcript_width, height: transcript_height,
-          offset: chat_state.transcript_offset, follow: chat_state.follow,
-          image_blocks: transcript_image_blocks(messages),
-          theme: theme
-        )
-      end
+    # Rebuilt every render: a memoized transcript would freeze the moment it
+    # was built and never show messages that land afterwards.
+    def build_transcript
+      messages = active_conversation ? active_conversation.messages.unexpired.chronological.to_a : []
+      Transcript.new(
+        messages: messages,
+        width: transcript_width, height: transcript_height,
+        offset: chat_state.transcript_offset, follow: chat_state.follow,
+        image_blocks: transcript_image_blocks(messages),
+        theme: theme
+      )
     end
 
-    # The composer draft is per-conversation, so switching chats keeps each draft.
+    # The composer draft is per-conversation, so switching chats keeps each
+    # draft. Drafts for inactive conversations live here; the active one lives
+    # in the composer component itself.
+    def composer_drafts
+      @composer_drafts ||= {}
+    end
+
     def composer_key
-      :"composer_#{active_conversation&.id || "none"}"
+      active_conversation&.id || "none"
     end
 
     def composer_placeholder
@@ -295,10 +312,10 @@ module Pando
       session[:add_contact_open]
     end
 
+    # Clears the memoized input so the next open starts empty.
     def close_add_contact
       session[:add_contact_open] = false
-      add_contact_state[:value] = ""
-      @add_contact_input = nil
+      add_contact_input.clear!
       focus.pop_scope
     end
 
@@ -343,25 +360,13 @@ module Pando
       "Added #{invite.name} — your contact request sends when you reconnect"
     end
 
-    def persist_component_state
+    # Per-render write-back: the viewport's clamped scroll position, and the
+    # typing-signal comparison against the draft as of the previous render.
+    def persist_view_state(transcript)
       chat_state.transcript_offset = transcript.offset
       chat_state.follow = transcript.at_bottom?
-      maybe_send_typing(composer_state[:value], composer.value)
-      composer_state[:value] = composer.value
-      add_contact_state[:value] = add_contact_input.value if add_contact_open?
-      persist_contact_request_state
-      persist_rooms_state
-      persist_relays_state
-      persist_attachments_state
-      persist_enrollment_state
-    end
-
-    def composer_state
-      component_state(composer_key, value: "")
-    end
-
-    def add_contact_state
-      component_state(:add_contact, value: "")
+      maybe_send_typing(@last_composer_value, composer.value)
+      @last_composer_value = composer.value
     end
 
     def transcript_width

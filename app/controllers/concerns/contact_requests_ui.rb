@@ -11,19 +11,22 @@ module Pando
       base.command "Find contact by fingerprint", :open_find_contact
       base.command "Toggle discoverability", :toggle_discoverability
       base.on_task :discover_contact, action: :discover_contact_finished
+
+      base.slot(:requests_list) { RequestList.new(requests: [], theme: theme) }
+      base.slot(:find_contact_input) { TextInput.new(width: 32, placeholder: "16-hex fingerprint") }
+
+      base.on_select :requests_list, :requests_list_selected
+      base.on_cancel :requests_list, :requests_list_cancelled
+      base.on_submit :find_contact_input, :find_contact_input_submitted
+      base.on_cancel :find_contact_input, :find_contact_input_cancelled
     end
 
     def open_requests
-      close_command_palette
+      dismiss_command_palette
+      requests_list.items = pending_requests
       session[:requests_open] = true
       focus.push_scope([:requests_list], origin: :modal)
       show
-    end
-
-    # Focus slot: the inbox list inside the requests modal.
-    def requests_list
-      @requests_list ||= RequestList.new(requests: pending_requests,
-        selected_index: requests_state[:index], theme: theme)
     end
 
     def requests_list_selected(value)
@@ -40,17 +43,10 @@ module Pando
     end
 
     def open_find_contact
-      close_command_palette
+      dismiss_command_palette
       session[:find_contact_open] = true
       focus.push_scope([:find_contact_input], origin: :modal)
       show
-    end
-
-    # Focus slot: the fingerprint entry inside the find-contact modal.
-    def find_contact_input
-      @find_contact_input ||= Charming::Components::TextInput.new(
-        value: find_contact_state[:value], width: 32, placeholder: "16-hex fingerprint"
-      )
     end
 
     def find_contact_input_submitted(value)
@@ -80,7 +76,7 @@ module Pando
     end
 
     def toggle_discoverability
-      close_command_palette
+      dismiss_command_palette
       flag = Setting.get("discoverable") != "1"
       Setting.put("discoverable", flag ? "1" : "0")
       hub&.discoverable = flag
@@ -104,8 +100,7 @@ module Pando
 
     def reject_fingerprint
       show_toast("A fingerprint is 16-hex characters", kind: :warn)
-      find_contact_state[:value] = ""
-      @find_contact_input = nil
+      find_contact_input.clear!
       show
     end
 
@@ -147,34 +142,19 @@ module Pando
 
     def reload_requests
       @pending_requests = nil
-      @requests_list = nil
+      requests_list.items = pending_requests
     end
 
     def close_requests
       session[:requests_open] = false
-      requests_state[:index] = 0
-      @requests_list = nil
       focus.pop_scope
     end
 
+    # Clears the memoized input so the next open starts empty.
     def close_find_contact
       session[:find_contact_open] = false
-      find_contact_state[:value] = ""
-      @find_contact_input = nil
+      find_contact_input.clear!
       focus.pop_scope
-    end
-
-    def persist_contact_request_state
-      requests_state[:index] = requests_list.selected_index if session[:requests_open]
-      find_contact_state[:value] = find_contact_input.value if session[:find_contact_open]
-    end
-
-    def requests_state
-      component_state(:requests, index: 0)
-    end
-
-    def find_contact_state
-      component_state(:find_contact, value: "")
     end
   end
 end

@@ -8,21 +8,21 @@ module Pando
   module VerificationUi
     def self.included(base)
       base.command "Verify contact", :open_verify
+
+      base.slot(:verify_panel) { VerifyPanel.new(contact: nil, my_fingerprint: my_fingerprint, theme: theme) }
+
+      base.on_select :verify_panel, :verify_panel_selected
+      base.on_cancel :verify_panel, :verify_panel_cancelled
     end
 
     def open_verify
-      close_command_palette
+      dismiss_command_palette
       return no_contact_to_verify unless verifiable_contact
 
+      verify_panel.contact = verifiable_contact
       session[:verify_open] = true
       focus.push_scope([:verify_panel], origin: :modal)
       show
-    end
-
-    # Focus slot: the fingerprint comparison card inside the verify modal.
-    def verify_panel
-      @verify_panel ||= VerifyPanel.new(contact: verifiable_contact,
-        my_fingerprint: my_fingerprint, theme: theme)
     end
 
     def verify_panel_selected(_value)
@@ -60,12 +60,11 @@ module Pando
       contact = verifiable_contact
       return nil unless contact&.trust_level == "key_changed"
 
-      "\u{26a0} #{contact.display_name}'s key has changed — verify before trusting new messages"
+      "⚠ #{contact.display_name}'s key has changed — verify before trusting new messages"
     end
 
     def close_verify
       session[:verify_open] = false
-      @verify_panel = nil
       focus.pop_scope
     end
   end

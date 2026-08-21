@@ -21,7 +21,7 @@ module Pando
     end
 
     def toggle_recording
-      close_command_palette
+      dismiss_command_palette
       return finish_recording if recording?
       return no_conversation_for_voice unless active_conversation
 
@@ -46,7 +46,7 @@ module Pando
     end
 
     def play_latest_voice
-      close_command_palette
+      dismiss_command_palette
       attachment = latest_voice_attachment
       return no_voice_to_play unless attachment
 

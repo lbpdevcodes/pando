@@ -10,8 +10,11 @@ module Pando
     command "Enroll this device", :begin_enrollment
     on_task :enroll_poll, action: :enrollment_polled
 
+    # Focus slot: the masked passphrase input.
+    slot(:passphrase) { TextInput.new(masked: true, width: 40) }
+    on_submit :passphrase, :passphrase_submitted
+
     def show
-      persist_input
       render :show,
         passphrase: passphrase,
         creating: !Store.keyring_exists?,
@@ -20,13 +23,6 @@ module Pando
         safety_code: onboarding_state.safety_code,
         error: onboarding_state.error,
         palette: command_palette
-    end
-
-    # Focus slot: the masked passphrase input.
-    def passphrase
-      @passphrase ||= Charming::Components::TextInput.new(
-        value: passphrase_state[:value], masked: true, width: 40
-      )
     end
 
     def passphrase_submitted(value)
@@ -39,7 +35,7 @@ module Pando
     # Enrolling replaces creating a fresh identity — only offered before any
     # keyring exists, so it can never clobber an established account.
     def begin_enrollment
-      close_command_palette
+      dismiss_command_palette
       if Store.keyring_exists?
         show_toast("This device already has a profile", kind: :warn)
       else
@@ -66,9 +62,8 @@ module Pando
 
       Store.data_key = keyring.data_key
       session[:identity] = keyring.identity
-      passphrase_state[:value] = ""
       DemoSeed.plant if ENV["PANDO_DEMO"]
-      navigate_to "/"
+      navigate :root
     end
 
     def open_keyring(value)
@@ -101,8 +96,6 @@ module Pando
     # enrollment flow needs a live app.
     def start_enrollment(value)
       session[:enroll_passphrase] = value
-      passphrase_state[:value] = ""
-      @passphrase = nil
       offer = Client::Enrollment::Offer.new(rendezvous: rendezvous_client)
       offer.deposit!
       session[:enroll_offer] = offer
@@ -142,7 +135,7 @@ module Pando
       session.delete(:enroll_offer)
       # The announce goes out once the Hub connects (Connectivity#apply_status).
       session[:announce_pending] = true
-      navigate_to "/"
+      navigate :root
     end
 
     def enrollment_failed(message)
@@ -155,14 +148,6 @@ module Pando
 
     def rendezvous_client
       Client::Enrollment.rendezvous_for(relay_url, token: relay_token)
-    end
-
-    def persist_input
-      passphrase_state[:value] = passphrase.value
-    end
-
-    def passphrase_state
-      component_state(:passphrase, value: "")
     end
 
     def onboarding_state

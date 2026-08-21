@@ -8,6 +8,13 @@ module Pando
   class EnrollConfirm < Charming::Component
     def initialize(safety_code:, mailbox:, theme: nil)
       super(theme: theme)
+      configure(safety_code: safety_code, mailbox: mailbox)
+    end
+
+    # Re-seeds the card for the offer under review — slot-declared components
+    # live for the screen's lifetime, so the controller swaps content instead
+    # of rebuilding.
+    def configure(safety_code:, mailbox:)
       @safety_code = safety_code
       @mailbox = mailbox
     end

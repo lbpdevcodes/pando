@@ -10,6 +10,13 @@ module Pando
 
     def initialize(source:, code:, theme: nil)
       super(theme: theme)
+      configure(source: source, code: code)
+    end
+
+    # Re-seeds the card for a fresh open — slot-declared components live for
+    # the screen's lifetime, so the controller swaps content instead of
+    # rebuilding.
+    def configure(source:, code:)
       @source = source
       @code = code
     end

@@ -2,5 +2,5 @@
 
 Pando::Application.routes do
   root "chat#show", title: "Chats"
-  screen "/onboarding", to: "onboarding#show", title: "Unlock"
+  screen :onboarding, "onboarding#show", title: "Unlock"
 end

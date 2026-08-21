@@ -164,6 +164,21 @@ RSpec.describe "Pando journeys" do
     expect(plain(backend.frames.last)).to include("Added Zoe")
   end
 
+  it "opens a modal from the palette with the palette fully dismissed" do
+    keyring = create_profile!
+    Pando::Store.data_key = keyring.data_key
+    seed_conversation
+    Pando::Store.lock!
+
+    backend = run_journey(*unlock_keys, "ctrl+p", *"add contact".chars, "enter", "ctrl+c")
+
+    frames = backend.frames.map { |f| plain(f) }
+    expect(frames.none? { |f| f.include?("DoubleRenderError") }).to be(true),
+      "a palette command double-rendered: #{frames.find { |f| f.include?("DoubleRenderError") }}"
+    expect(frames.last).to include("Add contact")
+    expect(frames.last).not_to include("Search commands")
+  end
+
   it "tells the user the contact request sends on reconnect when adding offline" do
     keyring = create_profile!
     Pando::Store.data_key = keyring.data_key

@@ -12,6 +12,11 @@ module Pando
       @my_fingerprint = my_fingerprint
     end
 
+    # Re-points the panel at the contact under review — slot-declared
+    # components live for the screen's lifetime, so the controller swaps the
+    # subject instead of rebuilding.
+    attr_writer :contact
+
     def render
       column(
         text("Their fingerprint   #{chunk(contact.fingerprint)}", style: theme.title),

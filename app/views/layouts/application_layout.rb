@@ -51,7 +51,7 @@ module Pando
       def help_modal
         return unless controller.session[:help_open]
 
-        render_component controller.help_overlay
+        render_component controller.component_for(:help_overlay)
       end
 
       def toast

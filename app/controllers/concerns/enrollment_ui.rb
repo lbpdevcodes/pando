@@ -10,20 +10,21 @@ module Pando
   module EnrollmentUi
     def self.included(base)
       base.command "Enroll a device", :open_enroll_device
+
+      base.slot(:enroll_code_input) { TextInput.new(width: 12, placeholder: "6-digit code") }
+      base.slot(:enroll_confirm) { EnrollConfirm.new(safety_code: nil, mailbox: nil, theme: theme) }
+
+      base.on_submit :enroll_code_input, :enroll_code_input_submitted
+      base.on_cancel :enroll_code_input, :enroll_code_input_cancelled
+      base.on_select :enroll_confirm, :enroll_confirm_selected
+      base.on_cancel :enroll_confirm, :enroll_confirm_cancelled
     end
 
     def open_enroll_device
-      close_command_palette
+      dismiss_command_palette
       session[:enroll_code_open] = true
       focus.push_scope([:enroll_code_input], origin: :modal)
       show
-    end
-
-    # Focus slot: the 6-digit code entry.
-    def enroll_code_input
-      @enroll_code_input ||= Charming::Components::TextInput.new(
-        value: enroll_code_state[:value], width: 12, placeholder: "6-digit code"
-      )
     end
 
     def enroll_code_input_submitted(value)
@@ -36,6 +37,7 @@ module Pando
       close_enroll_code
       session[:enroll_offer_payload] = offer
       session[:enroll_offer_code] = code
+      enroll_confirm.configure(safety_code: granter.safety_code(offer), mailbox: offer["mailbox"])
       session[:enroll_confirm_open] = true
       focus.push_scope([:enroll_confirm], origin: :modal)
       show
@@ -44,13 +46,6 @@ module Pando
     def enroll_code_input_cancelled
       close_enroll_code
       show
-    end
-
-    # Focus slot: the y/n safety-code confirmation.
-    def enroll_confirm
-      offer = session[:enroll_offer_payload]
-      @enroll_confirm ||= EnrollConfirm.new(safety_code: granter.safety_code(offer),
-        mailbox: offer["mailbox"], theme: theme)
     end
 
     def enroll_confirm_selected(_value)
@@ -97,15 +92,13 @@ module Pando
 
     def reject_enroll_code
       show_toast("Enter the 6-digit code from the new device", kind: :warn)
-      enroll_code_state[:value] = ""
-      @enroll_code_input = nil
+      enroll_code_input.clear!
       show
     end
 
     def no_offer_found
       show_toast("No enrollment waiting on that code", kind: :warn)
-      enroll_code_state[:value] = ""
-      @enroll_code_input = nil
+      enroll_code_input.clear!
       show
     end
 
@@ -117,10 +110,10 @@ module Pando
       end
     end
 
+    # Clears the memoized input so the next open starts empty.
     def close_enroll_code
       session[:enroll_code_open] = false
-      enroll_code_state[:value] = ""
-      @enroll_code_input = nil
+      enroll_code_input.clear!
       focus.pop_scope
     end
 
@@ -128,16 +121,7 @@ module Pando
       session[:enroll_confirm_open] = false
       session.delete(:enroll_offer_payload)
       session.delete(:enroll_offer_code)
-      @enroll_confirm = nil
       focus.pop_scope
-    end
-
-    def persist_enrollment_state
-      enroll_code_state[:value] = enroll_code_input.value if session[:enroll_code_open]
-    end
-
-    def enroll_code_state
-      component_state(:enroll_code, value: "")
     end
   end
 end

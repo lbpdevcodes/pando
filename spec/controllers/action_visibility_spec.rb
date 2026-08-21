@@ -14,6 +14,7 @@ RSpec.describe "Controller action visibility" do
     actions.concat(controller.timer_bindings.values.map(&:action))
     actions.concat(controller.task_bindings.values.map(&:action))
     actions.concat(controller.task_progress_bindings.values.map(&:action))
+    actions.concat(controller.component_event_bindings.values)
     actions.uniq
   end
 

@@ -12,21 +12,20 @@ module Pando
     def self.included(base)
       base.command "Attach file", :open_attach_picker
       base.command "Save attachment", :save_latest_attachment
+
+      base.slot(:attach_picker) { AttachPicker.new(root: attach_root, height: 12, theme: theme) }
+
+      base.on_select :attach_picker, :attach_picker_selected
+      base.on_cancel :attach_picker, :attach_picker_cancelled
     end
 
     def open_attach_picker
-      close_command_palette
+      dismiss_command_palette
       return no_conversation_for_attach unless active_conversation
 
       session[:attach_open] = true
       focus.push_scope([:attach_picker], origin: :modal)
       show
-    end
-
-    # Focus slot: the file browser inside the attach modal.
-    def attach_picker
-      @attach_picker ||= AttachPicker.new(root: attach_root,
-        current_dir: session[:attach_dir], height: 12, theme: theme)
     end
 
     def attach_picker_selected(path)
@@ -48,7 +47,7 @@ module Pando
     end
 
     def save_latest_attachment
-      close_command_palette
+      dismiss_command_palette
       attachment = latest_complete_attachment
       return no_attachment_to_save unless attachment
 
@@ -108,10 +107,10 @@ module Pando
        help: "enter open/select · backspace up · esc cancel"}
     end
 
+    # The picker is memoized for the screen's lifetime, so it reopens where the
+    # user left off — no directory write-back needed.
     def close_attach_picker
-      session[:attach_dir] = attach_picker.current_dir
       session[:attach_open] = false
-      @attach_picker = nil
       focus.pop_scope
     end
 
@@ -143,10 +142,6 @@ module Pando
 
       Charming::Components::Image.new(source: entry[:source], rows: entry[:rows],
         cols: entry[:cols]).render.split("\n")
-    end
-
-    def persist_attachments_state
-      session[:attach_dir] = attach_picker.current_dir if session[:attach_open]
     end
   end
 end
